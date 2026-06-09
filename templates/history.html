@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Storico Backup{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-clock-history me-2 text-danger"></i>Storico Esecuzioni</h4>
+  <select class="form-select form-select-sm w-auto" id="filter-job" onchange="loadRuns()">
+    <option value="">Tutti i job</option>
+  </select>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr><th>Job</th><th>Avviato</th><th>Durata</th><th>Dimensione</th>
+            <th>Percorso</th><th>Stato</th><th>Avviato da</th><th></th></tr>
+      </thead>
+      <tbody id="runs-tbody"><tr><td colspan="8" class="text-center py-4 text-muted">Caricamento…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const statusBadge = {
+  success:'<span class="badge bg-success">Successo</span>',
+  failed:'<span class="badge bg-danger">Fallito</span>',
+  running:'<span class="badge bg-primary">In corso</span>',
+  partial:'<span class="badge bg-warning text-dark">Parziale</span>'
+};
+
+function fmtDuration(start, end) {
+  if (!end) return '—';
+  const sec = Math.round((new Date(end)-new Date(start))/1000);
+  if (sec<60) return `${sec}s`;
+  return `${Math.floor(sec/60)}m ${sec%60}s`;
+}
+function fmtSize(bytes) {
+  if (!bytes) return '—';
+  if (bytes>1e9) return (bytes/1e9).toFixed(1)+' GB';
+  if (bytes>1e6) return (bytes/1e6).toFixed(1)+' MB';
+  return (bytes/1e3).toFixed(0)+' KB';
+}
+
+async function loadJobs() {
+  const jobs = await api('GET','/api/jobs');
+  const sel = document.getElementById('filter-job');
+  jobs.forEach(j=>{ const o=document.createElement('option'); o.value=j.id; o.textContent=j.name; sel.appendChild(o); });
+}
+
+async function loadRuns() {
+  const jobId = document.getElementById('filter-job').value;
+  const url = '/api/runs?limit=100' + (jobId?`&job_id=${jobId}`:'');
+  const runs = await api('GET', url);
+  const tb = document.getElementById('runs-tbody');
+  if (!runs.length) { tb.innerHTML='<tr><td colspan="8" class="text-center py-4 text-muted">Nessuna esecuzione</td></tr>'; return; }
+  tb.innerHTML = runs.map(r=>`
+    <tr>
+      <td class="fw-semibold">${r.job_name||'Job #'+r.job_id}</td>
+      <td><small>${r.started_at?new Date(r.started_at).toLocaleString('it-IT'):''}</small></td>
+      <td><small>${fmtDuration(r.started_at, r.finished_at)}</small></td>
+      <td><small>${fmtSize(r.size_bytes)}</small></td>
+      <td><small class="text-muted text-truncate d-block" style="max-width:180px">${r.backup_path||'—'}</small></td>
+      <td>${statusBadge[r.status]||r.status}
+          ${r.error_message?`<br><small class="text-danger">${r.error_message.substring(0,50)}…</small>`:''}</td>
+      <td><small class="text-muted">${r.triggered_by}</small></td>
+      <td><a href="/logs/${r.id}" class="btn btn-sm btn-outline-secondary py-0">
+        <i class="bi bi-file-text"></i> Log</a></td>
+    </tr>`).join('');
+}
+
+loadJobs().then(()=>loadRuns());
+</script>
+{% endblock %}

@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-speedometer2 me-2 text-danger"></i>Dashboard</h4>
+  <button class="btn btn-sm btn-outline-secondary" onclick="loadAll()">
+    <i class="bi bi-arrow-clockwise"></i> Aggiorna
+  </button>
+</div>
+
+<!-- Statistiche -->
+<div class="row g-3 mb-4" id="stats-row">
+  <div class="col-sm-6 col-xl-3">
+    <div class="card card-stat shadow-sm">
+      <div class="card-body d-flex align-items-center gap-3">
+        <i class="bi bi-server fs-2 text-danger"></i>
+        <div><div class="fs-3 fw-bold" id="stat-servers">—</div><div class="text-muted small">Server configurati</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card card-stat shadow-sm">
+      <div class="card-body d-flex align-items-center gap-3">
+        <i class="bi bi-briefcase fs-2 text-primary"></i>
+        <div><div class="fs-3 fw-bold" id="stat-jobs">—</div><div class="text-muted small">Job attivi</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card card-stat shadow-sm">
+      <div class="card-body d-flex align-items-center gap-3">
+        <i class="bi bi-check-circle fs-2 text-success"></i>
+        <div><div class="fs-3 fw-bold" id="stat-ok">—</div><div class="text-muted small">Backup riusciti (7gg)</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-xl-3">
+    <div class="card card-stat shadow-sm">
+      <div class="card-body d-flex align-items-center gap-3">
+        <i class="bi bi-x-circle fs-2 text-warning"></i>
+        <div><div class="fs-3 fw-bold" id="stat-fail">—</div><div class="text-muted small">Backup falliti (7gg)</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4">
+  <!-- Job status -->
+  <div class="col-lg-7">
+    <div class="card shadow-sm">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-briefcase me-2"></i>Job di Backup</span>
+        <a href="/wizard/job" class="btn btn-sm btn-danger"><i class="bi bi-plus"></i> Nuovo</a>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover mb-0">
+            <thead class="table-light"><tr>
+              <th>Nome</th><th>Server</th><th>Tipo</th><th>Prossima</th><th>Ultimo</th><th></th>
+            </tr></thead>
+            <tbody id="jobs-table"><tr><td colspan="6" class="text-center text-muted py-3">Caricamento…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ultime esecuzioni -->
+  <div class="col-lg-5">
+    <div class="card shadow-sm">
+      <div class="card-header"><i class="bi bi-clock-history me-2"></i>Ultime esecuzioni</div>
+      <div class="list-group list-group-flush" id="runs-list">
+        <div class="list-group-item text-muted text-center py-3">Caricamento…</div>
+      </div>
+      <div class="card-footer text-end">
+        <a href="/history" class="btn btn-sm btn-outline-secondary">Vedi tutto</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const statusIcon = {
+  success: '<i class="bi bi-check-circle-fill text-success"></i>',
+  failed:  '<i class="bi bi-x-circle-fill text-danger"></i>',
+  running: '<i class="bi bi-arrow-repeat text-primary spin"></i>',
+  partial: '<i class="bi bi-exclamation-circle-fill text-warning"></i>',
+};
+const typeLabel = { vm_snapshot:'VM Snapshot', app_data:'Dati App', full:'Completo' };
+
+async function loadAll() {
+  const [servers, jobs, runs] = await Promise.all([
+    api('GET','/api/servers'), api('GET','/api/jobs'), api('GET','/api/runs?limit=8')
+  ]);
+  // stats
+  document.getElementById('stat-servers').textContent = servers.length;
+  document.getElementById('stat-jobs').textContent = jobs.filter(j=>j.status==='active').length;
+  document.getElementById('stat-ok').textContent = runs.filter(r=>r.status==='success').length;
+  document.getElementById('stat-fail').textContent = runs.filter(r=>r.status==='failed').length;
+
+  // jobs table
+  const tbody = document.getElementById('jobs-table');
+  if (!jobs.length) { tbody.innerHTML='<tr><td colspan="6" class="text-center text-muted py-3">Nessun job configurato</td></tr>'; }
+  else tbody.innerHTML = jobs.map(j=>`
+    <tr>
+      <td>${j.name}</td>
+      <td><small>${j.server_name||'—'}</small></td>
+      <td><span class="badge bg-secondary">${typeLabel[j.backup_type]||j.backup_type}</span></td>
+      <td><small class="text-muted">${j.cron_expression}</small></td>
+      <td>${j.last_run_status ? statusIcon[j.last_run_status] : '—'}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-danger py-0" onclick="runNow(${j.id},'${j.name}')">
+          <i class="bi bi-play-fill"></i>
+        </button>
+      </td>
+    </tr>`).join('');
+
+  // runs list
+  const rlist = document.getElementById('runs-list');
+  if (!runs.length) { rlist.innerHTML='<div class="list-group-item text-muted text-center py-3">Nessuna esecuzione</div>'; }
+  else rlist.innerHTML = runs.map(r=>`
+    <a href="/logs/${r.id}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-start py-2">
+      <div>
+        <div class="fw-semibold small">${r.job_name||'Job #'+r.job_id}</div>
+        <div class="text-muted" style="font-size:.75rem">${r.started_at ? new Date(r.started_at).toLocaleString('it-IT') : ''}</div>
+        ${r.error_message ? `<div class="text-danger" style="font-size:.72rem">${r.error_message.substring(0,60)}…</div>` : ''}
+      </div>
+      <div>${statusIcon[r.status]||r.status}</div>
+    </a>`).join('');
+}
+
+async function runNow(id, name) {
+  if (!confirm(`Avviare ora il backup "${name}"?`)) return;
+  try {
+    await api('POST', `/api/jobs/${id}/run`);
+    showToast(`Job "${name}" avviato in background`);
+    setTimeout(loadAll, 2000);
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
+loadAll();
+setInterval(loadAll, 30000);
+</script>
+<style>.spin { animation: spin 1s linear infinite; } @keyframes spin { to { transform: rotate(360deg); } }</style>
+{% endblock %}

@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block title %}Nuovo Job di Backup{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-briefcase me-2 text-danger"></i>Crea Job di Backup</h5>
+      </div>
+      <div class="card-body">
+        <form id="job-form">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Nome Job</label>
+              <input class="form-control" id="f-name" placeholder="Backup giornaliero Gamma" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Server</label>
+              <select class="form-select" id="f-server" required>
+                <option value="">— Seleziona server —</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Destinazione QNAP</label>
+              <select class="form-select" id="f-dest" required>
+                <option value="">— Seleziona destinazione —</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Tipo di backup</label>
+              <select class="form-select" id="f-type" required>
+                <option value="full">Completo (VM + Dati applicativi)</option>
+                <option value="vm_snapshot">Solo VM (OVF/snapshot)</option>
+                <option value="app_data">Solo Dati applicativi</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Schedulazione -->
+          <div class="mt-4 mb-2 fw-semibold">Schedulazione</div>
+          <div class="row g-2 mb-2">
+            <div class="col-auto">
+              <button type="button" class="btn btn-sm btn-outline-secondary preset-btn" onclick="setPreset('0 2 * * *','Ogni notte alle 02:00')">Notte (02:00)</button>
+            </div>
+            <div class="col-auto">
+              <button type="button" class="btn btn-sm btn-outline-secondary preset-btn" onclick="setPreset('0 3 * * 0','Domenica alle 03:00')">Domenica</button>
+            </div>
+            <div class="col-auto">
+              <button type="button" class="btn btn-sm btn-outline-secondary preset-btn" onclick="setPreset('0 1 * * 1-5','Lunedì-Venerdì 01:00')">Solo feriali</button>
+            </div>
+            <div class="col-auto">
+              <button type="button" class="btn btn-sm btn-outline-secondary preset-btn" onclick="setPreset('0 */6 * * *','Ogni 6 ore')">Ogni 6h</button>
+            </div>
+          </div>
+
+          <!-- Cron builder visuale -->
+          <div class="card bg-light mb-3">
+            <div class="card-body">
+              <div class="row g-3 align-items-end">
+                <div class="col">
+                  <label class="form-label small">Minuto</label>
+                  <input class="form-control form-control-sm cron-part" id="c-min" value="0" placeholder="0-59">
+                </div>
+                <div class="col">
+                  <label class="form-label small">Ora</label>
+                  <input class="form-control form-control-sm cron-part" id="c-hour" value="2" placeholder="0-23">
+                </div>
+                <div class="col">
+                  <label class="form-label small">Giorno mese</label>
+                  <input class="form-control form-control-sm cron-part" id="c-day" value="*" placeholder="1-31">
+                </div>
+                <div class="col">
+                  <label class="form-label small">Mese</label>
+                  <input class="form-control form-control-sm cron-part" id="c-month" value="*" placeholder="1-12">
+                </div>
+                <div class="col">
+                  <label class="form-label small">Giorno sett.</label>
+                  <input class="form-control form-control-sm cron-part" id="c-dow" value="*" placeholder="0-6">
+                </div>
+              </div>
+              <div class="mt-2 d-flex align-items-center gap-2">
+                <small class="text-muted">Espressione cron:</small>
+                <code id="cron-preview" class="text-danger fw-semibold">0 2 * * *</code>
+                <small class="text-muted" id="cron-desc">Ogni notte alle 02:00</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">Copie da mantenere</label>
+              <input class="form-control" id="f-retention" value="7" type="number" min="1">
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Email notifiche (opzionale)</label>
+              <input class="form-control" id="f-email" type="email" placeholder="admin@cri-catania.it">
+            </div>
+          </div>
+
+          <div class="d-flex justify-content-end mt-4 pt-3 border-top">
+            <button type="submit" class="btn btn-danger">
+              <i class="bi bi-check-lg"></i> Crea Job
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadSelects() {
+  const [servers, dests] = await Promise.all([api('GET','/api/servers'), api('GET','/api/destinations')]);
+  const ss = document.getElementById('f-server');
+  servers.forEach(s=>{ const o=document.createElement('option'); o.value=s.id; o.textContent=`${s.name} (${s.server_type})`; ss.appendChild(o); });
+  const ds = document.getElementById('f-dest');
+  dests.forEach(d=>{ const o=document.createElement('option'); o.value=d.id; o.textContent=`${d.name} (${d.host})`; ds.appendChild(o); });
+}
+loadSelects();
+
+function buildCron() {
+  return ['c-min','c-hour','c-day','c-month','c-dow'].map(id=>document.getElementById(id).value||'*').join(' ');
+}
+
+document.querySelectorAll('.cron-part').forEach(el=>el.addEventListener('input',()=>{
+  document.getElementById('cron-preview').textContent = buildCron();
+  document.getElementById('cron-desc').textContent = '';
+}));
+
+function setPreset(cron, desc) {
+  const parts = cron.split(' ');
+  ['c-min','c-hour','c-day','c-month','c-dow'].forEach((id,i)=>document.getElementById(id).value=parts[i]);
+  document.getElementById('cron-preview').textContent = cron;
+  document.getElementById('cron-desc').textContent = desc;
+}
+
+document.getElementById('job-form').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const payload = {
+    name: document.getElementById('f-name').value,
+    server_id: +document.getElementById('f-server').value,
+    destination_id: +document.getElementById('f-dest').value,
+    backup_type: document.getElementById('f-type').value,
+    cron_expression: buildCron(),
+    retention_copies: +document.getElementById('f-retention').value,
+    notify_email: document.getElementById('f-email').value||null,
+  };
+  try {
+    const res = await api('POST','/api/jobs', payload);
+    showToast(`Job "${res.name}" creato con successo!`);
+    setTimeout(()=>{ window.location='/jobs'; }, 1500);
+  } catch(e) { showToast(e.message,'danger'); }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Job di Backup{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h4 class="mb-0"><i class="bi bi-briefcase me-2 text-danger"></i>Job di Backup</h4>
+  <a href="/wizard/job" class="btn btn-danger"><i class="bi bi-plus"></i> Nuovo Job</a>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover mb-0">
+      <thead class="table-light">
+        <tr><th>Nome</th><th>Server</th><th>Destinazione</th><th>Tipo</th>
+            <th>Schedule</th><th>Stato</th><th>Ultimo run</th><th>Azioni</th></tr>
+      </thead>
+      <tbody id="jobs-tbody"><tr><td colspan="8" class="text-center py-4 text-muted">Caricamento…</td></tr></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const statusBadge = { active:'<span class="badge bg-success">Attivo</span>',
+  paused:'<span class="badge bg-warning text-dark">Pausa</span>',
+  disabled:'<span class="badge bg-secondary">Disabilitato</span>' };
+const typeLabel = { vm_snapshot:'VM Snapshot', app_data:'Dati App', full:'Completo' };
+const runBadge = { success:'<span class="badge bg-success">OK</span>',
+  failed:'<span class="badge bg-danger">Fallito</span>',
+  running:'<span class="badge bg-primary">In corso</span>',
+  partial:'<span class="badge bg-warning text-dark">Parziale</span>' };
+
+async function loadJobs() {
+  const jobs = await api('GET','/api/jobs');
+  const tb = document.getElementById('jobs-tbody');
+  if (!jobs.length) { tb.innerHTML='<tr><td colspan="8" class="text-center py-4 text-muted">Nessun job configurato. <a href="/wizard/job">Creane uno</a></td></tr>'; return; }
+  tb.innerHTML = jobs.map(j=>`
+    <tr>
+      <td class="fw-semibold">${j.name}</td>
+      <td>${j.server_name||'—'}</td>
+      <td>${j.destination_name||'—'}</td>
+      <td><span class="badge bg-secondary">${typeLabel[j.backup_type]||j.backup_type}</span></td>
+      <td><code>${j.cron_expression}</code></td>
+      <td>${statusBadge[j.status]||j.status}</td>
+      <td>${j.last_run_status ? runBadge[j.last_run_status]+(j.last_run_at?'<small class="text-muted ms-1">'+new Date(j.last_run_at).toLocaleDateString('it-IT')+'</small>':'') : '—'}</td>
+      <td>
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-danger" title="Esegui ora" onclick="runNow(${j.id},'${j.name}')">
+            <i class="bi bi-play-fill"></i>
+          </button>
+          <button class="btn btn-outline-secondary" title="${j.status==='active'?'Metti in pausa':'Riattiva'}"
+            onclick="toggleStatus(${j.id},'${j.status}')">
+            <i class="bi bi-${j.status==='active'?'pause':'play'}-fill"></i>
+          </button>
+          <button class="btn btn-outline-danger" title="Elimina" onclick="deleteJob(${j.id},'${j.name}')">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+async function runNow(id, name) {
+  if (!confirm(`Avviare subito "${name}"?`)) return;
+  try { await api('POST',`/api/jobs/${id}/run`); showToast('Job avviato in background'); setTimeout(loadJobs,2000); }
+  catch(e) { showToast(e.message,'danger'); }
+}
+
+async function toggleStatus(id, current) {
+  const next = current==='active' ? 'paused' : 'active';
+  try { await api('PATCH',`/api/jobs/${id}/status?status=${next}`); loadJobs(); }
+  catch(e) { showToast(e.message,'danger'); }
+}
+
+async function deleteJob(id, name) {
+  if (!confirm(`Eliminare il job "${name}"?`)) return;
+  try { await api('DELETE',`/api/jobs/${id}`); showToast('Job eliminato'); loadJobs(); }
+  catch(e) { showToast(e.message,'danger'); }
+}
+
+loadJobs();
+</script>
+{% endblock %}

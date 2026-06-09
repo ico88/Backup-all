@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Log Esecuzione #{{ run_id }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0"><i class="bi bi-file-text me-2 text-danger"></i>Log Esecuzione <span class="text-muted">#{{ run_id }}</span></h5>
+  <div class="d-flex gap-2">
+    <button class="btn btn-sm btn-outline-secondary" onclick="loadData()"><i class="bi bi-arrow-clockwise"></i> Aggiorna</button>
+    <a href="/history" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Torna allo storico</a>
+  </div>
+</div>
+
+<!-- Info run -->
+<div class="card shadow-sm mb-3" id="run-info">
+  <div class="card-body py-2 d-flex gap-4 flex-wrap">
+    <div><small class="text-muted">Job</small><br><strong id="i-job">—</strong></div>
+    <div><small class="text-muted">Avviato</small><br><span id="i-start">—</span></div>
+    <div><small class="text-muted">Durata</small><br><span id="i-dur">—</span></div>
+    <div><small class="text-muted">Dimensione</small><br><span id="i-size">—</span></div>
+    <div><small class="text-muted">Percorso</small><br><code id="i-path">—</code></div>
+    <div><small class="text-muted">Stato</small><br><span id="i-status">—</span></div>
+  </div>
+</div>
+
+<!-- Log box -->
+<div class="log-box" id="log-box">Caricamento log…</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const RUN_ID = {{ run_id }};
+const statusBadge = {
+  success:'<span class="badge bg-success">Successo</span>',
+  failed:'<span class="badge bg-danger">Fallito</span>',
+  running:'<span class="badge bg-primary">In corso</span>',
+  partial:'<span class="badge bg-warning text-dark">Parziale</span>'
+};
+function fmtSize(bytes) {
+  if (!bytes) return '—';
+  if (bytes>1e9) return (bytes/1e9).toFixed(1)+' GB';
+  if (bytes>1e6) return (bytes/1e6).toFixed(1)+' MB';
+  return (bytes/1e3).toFixed(0)+' KB';
+}
+
+async function loadData() {
+  const [run, logs] = await Promise.all([
+    api('GET',`/api/runs/${RUN_ID}`),
+    api('GET',`/api/runs/${RUN_ID}/logs`)
+  ]);
+  // info
+  document.getElementById('i-job').textContent = run.job_name||'#'+run.job_id;
+  document.getElementById('i-start').textContent = run.started_at ? new Date(run.started_at).toLocaleString('it-IT') : '—';
+  if (run.started_at && run.finished_at) {
+    const sec = Math.round((new Date(run.finished_at)-new Date(run.started_at))/1000);
+    document.getElementById('i-dur').textContent = sec<60 ? `${sec}s` : `${Math.floor(sec/60)}m ${sec%60}s`;
+  }
+  document.getElementById('i-size').textContent = fmtSize(run.size_bytes);
+  document.getElementById('i-path').textContent = run.backup_path||'—';
+  document.getElementById('i-status').innerHTML = statusBadge[run.status]||run.status;
+
+  // logs
+  const box = document.getElementById('log-box');
+  if (!logs.length) { box.textContent = 'Nessun log disponibile.'; return; }
+  box.innerHTML = logs.map(l=>{
+    const ts = new Date(l.timestamp).toLocaleTimeString('it-IT');
+    return `<div class="log-${l.level}"><span class="opacity-50">[${ts}]</span> <span class="opacity-75">[${l.level}]</span> ${escHtml(l.message)}</div>`;
+  }).join('');
+  box.scrollTop = box.scrollHeight;
+
+  // Ricarica se ancora in esecuzione
+  if (run.status === 'running') setTimeout(loadData, 3000);
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadData();
+</script>
+{% endblock %}
