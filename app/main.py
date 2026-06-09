@@ -8,7 +8,7 @@ import os, secrets
 
 from app.database import init_db
 from app.api import servers, destinations, jobs, runs
-from app.api import auth_routes, settings as settings_api
+from app.api import auth_routes, settings as settings_api, stats as stats_api
 
 _key_file = ".secret_key"
 if os.path.exists(_key_file):
@@ -65,6 +65,7 @@ app.include_router(jobs.router)
 app.include_router(runs.router)
 app.include_router(auth_routes.router)
 app.include_router(settings_api.router)
+app.include_router(stats_api.router)
 
 
 # ── Auth middleware per pagine UI ─────────────────────
@@ -149,3 +150,10 @@ async def settings_page(request: Request):
     if not _check_session(request):
         return RedirectResponse(url="/login")
     return templates.TemplateResponse("settings.html", {"request": request})
+
+
+@app.get("/reports")
+async def reports_page(request: Request):
+    if not _check_session(request):
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("reports.html", {"request": request})

@@ -196,6 +196,9 @@
   <a href="/history" class="nav-link {% if 'history' in request.url.path or 'logs' in request.url.path %}active{% endif %}">
     <i class="bi bi-clock-history"></i> Storico Esecuzioni
   </a>
+  <a href="/reports" class="nav-link {% if 'reports' in request.url.path %}active{% endif %}">
+    <i class="bi bi-bar-chart-line"></i> Report &amp; Statistiche
+  </a>
 
   <div class="nav-section" style="margin-top:1rem">Configurazione</div>
   <a href="/wizard/server" class="nav-link {% if 'wizard/server' in request.url.path %}active{% endif %}">
