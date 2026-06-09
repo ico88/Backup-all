@@ -19,6 +19,9 @@ class JobCreate(BaseModel):
     retention_copies: int = 7
     compression: bool = True
     notify_email: Optional[str] = None
+    notify_on_success: bool = False
+    notify_on_failure: bool = True
+    verify_integrity: bool = True
 
 
 @router.get("")
@@ -34,7 +37,8 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
         server_id=data.server_id, destination_id=data.destination_id,
         backup_type=data.backup_type, cron_expression=data.cron_expression,
         retention_copies=data.retention_copies, compression=data.compression,
-        notify_email=data.notify_email,
+        notify_email=data.notify_email, notify_on_success=data.notify_on_success,
+        notify_on_failure=data.notify_on_failure, verify_integrity=data.verify_integrity,
     )
     db.add(job)
     db.commit()
@@ -99,6 +103,11 @@ def _serialize(j: BackupJob) -> dict:
         "backup_type": j.backup_type, "status": j.status,
         "cron_expression": j.cron_expression,
         "retention_copies": j.retention_copies,
+        "compression": j.compression,
+        "notify_email": j.notify_email,
+        "notify_on_success": j.notify_on_success,
+        "notify_on_failure": j.notify_on_failure,
+        "verify_integrity": j.verify_integrity,
         "last_run_at": j.last_run_at.isoformat() if j.last_run_at else None,
         "last_run_status": j.last_run_status,
     }

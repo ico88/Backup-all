@@ -110,6 +110,69 @@ class QNAPClient:
             )
 
 
+def apply_count_retention(dest_cfg, server_name: str, max_copies: int, log_fn=None):
+    """
+    Mantiene al massimo max_copies directory di backup sul QNAP per questo server.
+    Le directory sono ordinate per nome (timestamp), quindi le più vecchie vengono rimosse.
+    """
+    if not max_copies or max_copies <= 0:
+        return
+    password = decrypt(dest_cfg.password_enc) if dest_cfg.password_enc else ""
+    port = dest_cfg.port or 22
+    user = dest_cfg.username
+    host = dest_cfg.host
+    remote_base = os.path.join(dest_cfg.base_path, server_name).replace("\\", "/")
+
+    env = os.environ.copy()
+    if password:
+        env["SSHPASS"] = password
+        ssh_prefix = ["sshpass", "-e", "ssh", "-p", str(port), "-o", "StrictHostKeyChecking=no"]
+    else:
+        ssh_prefix = ["ssh", "-p", str(port), "-o", "StrictHostKeyChecking=no"]
+
+    # Elenca directory di backup ordinate per nome (formato timestamp YYYY-MM-DD_HH-MM-SS)
+    list_cmd = f"ls -1d {remote_base}/20*/ 2>/dev/null | sort"
+    result = subprocess.run(
+        ssh_prefix + [f"{user}@{host}", list_cmd],
+        capture_output=True, text=True, env=env
+    )
+    dirs = [d.strip().rstrip("/") for d in result.stdout.splitlines() if d.strip()]
+    to_delete = dirs[:-max_copies] if len(dirs) > max_copies else []
+
+    for d in to_delete:
+        del_cmd = f"rm -rf {d}"
+        subprocess.run(ssh_prefix + [f"{user}@{host}", del_cmd], env=env, capture_output=True)
+        if log_fn:
+            log_fn(f"Retention: rimosso backup vecchio {d}")
+
+    if log_fn and to_delete:
+        log_fn(f"Retention: mantenute {min(len(dirs), max_copies)} copie, rimosse {len(to_delete)}")
+
+
+def compute_remote_checksum(dest_cfg, remote_path: str) -> str | None:
+    """Calcola SHA-256 di tutti i file in remote_path via SSH (richiede sha256sum sul QNAP)."""
+    password = decrypt(dest_cfg.password_enc) if dest_cfg.password_enc else ""
+    port = dest_cfg.port or 22
+    user = dest_cfg.username
+    host = dest_cfg.host
+    remote_path = remote_path.replace("\\", "/")
+
+    env = os.environ.copy()
+    if password:
+        env["SSHPASS"] = password
+        ssh_prefix = ["sshpass", "-e", "ssh", "-p", str(port), "-o", "StrictHostKeyChecking=no"]
+    else:
+        ssh_prefix = ["ssh", "-p", str(port), "-o", "StrictHostKeyChecking=no"]
+
+    cmd = f"find {remote_path} -type f | sort | xargs sha256sum 2>/dev/null | sha256sum | awk '{{print $1}}'"
+    result = subprocess.run(
+        ssh_prefix + [f"{user}@{host}", cmd],
+        capture_output=True, text=True, env=env, timeout=120
+    )
+    checksum = result.stdout.strip()
+    return checksum if len(checksum) == 64 else None
+
+
 def apply_retention(dest_cfg, remote_base: str, retention_days: int, log_fn=None):
     """
     Rimuove backup più vecchi di retention_days giorni via SSH sul QNAP.

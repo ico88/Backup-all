@@ -3,58 +3,91 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h4 class="mb-0"><i class="bi bi-briefcase me-2 text-danger"></i>Job di Backup</h4>
-  <a href="/wizard/job" class="btn btn-danger"><i class="bi bi-plus"></i> Nuovo Job</a>
+  <div class="page-title"><i class="bi bi-play-circle me-2" style="color:var(--cri-red)"></i>Job di Backup</div>
+  <a href="/wizard/job" class="btn btn-primary btn-sm"><i class="bi bi-plus me-1"></i>Nuovo Job</a>
 </div>
 
-<div class="card shadow-sm">
-  <div class="table-responsive">
-    <table class="table table-hover mb-0">
-      <thead class="table-light">
-        <tr><th>Nome</th><th>Server</th><th>Destinazione</th><th>Tipo</th>
-            <th>Schedule</th><th>Stato</th><th>Ultimo run</th><th>Azioni</th></tr>
-      </thead>
-      <tbody id="jobs-tbody"><tr><td colspan="8" class="text-center py-4 text-muted">Caricamento…</td></tr></tbody>
-    </table>
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead><tr>
+          <th>Nome</th><th>Sorgente</th><th>Destinazione</th><th>Tipo</th>
+          <th>Schedule</th><th>Retention</th><th>Stato</th><th>Ultimo run</th><th></th>
+        </tr></thead>
+        <tbody id="jobs-tbody">
+          <tr><td colspan="9" class="text-center py-4 text-muted"><i class="bi bi-arrow-repeat spin me-2"></i>Caricamento…</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
-const statusBadge = { active:'<span class="badge bg-success">Attivo</span>',
-  paused:'<span class="badge bg-warning text-dark">Pausa</span>',
-  disabled:'<span class="badge bg-secondary">Disabilitato</span>' };
-const typeLabel = { vm_snapshot:'VM Snapshot', app_data:'Dati App', full:'Completo' };
-const runBadge = { success:'<span class="badge bg-success">OK</span>',
-  failed:'<span class="badge bg-danger">Fallito</span>',
-  running:'<span class="badge bg-primary">In corso</span>',
-  partial:'<span class="badge bg-warning text-dark">Parziale</span>' };
+const statusBadge = s => ({
+  success: '<span class="badge-status bs-success">Successo</span>',
+  failed:  '<span class="badge-status bs-failed">Fallito</span>',
+  running: '<span class="badge-status bs-running">In corso</span>',
+  partial: '<span class="badge-status bs-partial">Parziale</span>',
+}[s] || '—');
+
+const jobStatusBadge = s => ({
+  active:   '<span class="badge-status bs-active">Attivo</span>',
+  paused:   '<span class="badge-status bs-paused">In pausa</span>',
+  disabled: '<span class="badge-status bs-disabled">Disattivo</span>',
+}[s] || s);
+
+const typeLabel = {
+  vm_snapshot: '<i class="bi bi-camera me-1"></i>VM Snapshot',
+  app_data: '<i class="bi bi-database me-1"></i>Dati App',
+  full: '<i class="bi bi-archive me-1"></i>Completo'
+};
 
 async function loadJobs() {
   const jobs = await api('GET','/api/jobs');
   const tb = document.getElementById('jobs-tbody');
-  if (!jobs.length) { tb.innerHTML='<tr><td colspan="8" class="text-center py-4 text-muted">Nessun job configurato. <a href="/wizard/job">Creane uno</a></td></tr>'; return; }
+  if (!jobs.length) {
+    tb.innerHTML='<tr><td colspan="9" class="text-center py-4 text-muted"><i class="bi bi-inbox me-2"></i>Nessun job — <a href="/wizard/job">crea il primo</a></td></tr>';
+    return;
+  }
   tb.innerHTML = jobs.map(j=>`
     <tr>
-      <td class="fw-semibold">${j.name}</td>
-      <td>${j.server_name||'—'}</td>
-      <td>${j.destination_name||'—'}</td>
-      <td><span class="badge bg-secondary">${typeLabel[j.backup_type]||j.backup_type}</span></td>
-      <td><code>${j.cron_expression}</code></td>
-      <td>${statusBadge[j.status]||j.status}</td>
-      <td>${j.last_run_status ? runBadge[j.last_run_status]+(j.last_run_at?'<small class="text-muted ms-1">'+new Date(j.last_run_at).toLocaleDateString('it-IT')+'</small>':'') : '—'}</td>
       <td>
-        <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-danger" title="Esegui ora" onclick="runNow(${j.id},'${j.name}')">
-            <i class="bi bi-play-fill"></i>
+        <div class="fw-semibold" style="font-size:.85rem">${j.name}</div>
+        ${j.description?`<div style="font-size:.72rem;color:var(--text-muted)">${j.description}</div>`:''}
+        <div style="font-size:.7rem;color:var(--text-muted);margin-top:.15rem">
+          ${j.verify_integrity?'<i class="bi bi-shield-check text-success me-1" title="Integrità verificata"></i>':''}
+          ${j.notify_email?`<i class="bi bi-envelope text-info me-1" title="${j.notify_email}"></i>`:''}
+          ${j.compression?'<i class="bi bi-file-zip" title="Compressione"></i>':''}
+        </div>
+      </td>
+      <td style="font-size:.82rem">${j.server_name||'—'}</td>
+      <td style="font-size:.82rem">${j.destination_name||'—'}</td>
+      <td style="font-size:.78rem;color:#9ca3af">${typeLabel[j.backup_type]||j.backup_type}</td>
+      <td><code style="font-size:.75rem;color:#fbbf24">${j.cron_expression}</code></td>
+      <td style="font-size:.8rem;text-align:center">
+        <span title="Copie mantenute" style="color:var(--text-muted)">
+          <i class="bi bi-layers me-1"></i>${j.retention_copies}
+        </span>
+      </td>
+      <td>${jobStatusBadge(j.status)}</td>
+      <td>
+        ${j.last_run_status ? statusBadge(j.last_run_status) : '<span style="color:var(--text-muted);font-size:.78rem">Mai</span>'}
+        ${j.last_run_at?`<div style="font-size:.7rem;color:var(--text-muted)">${new Date(j.last_run_at).toLocaleDateString('it-IT')}</div>`:''}
+      </td>
+      <td>
+        <div class="d-flex gap-1">
+          <button class="btn btn-icon btn-outline-secondary" title="Esegui ora" onclick="runNow(${j.id},'${j.name}')">
+            <i class="bi bi-play-fill" style="color:var(--cri-red)"></i>
           </button>
-          <button class="btn btn-outline-secondary" title="${j.status==='active'?'Metti in pausa':'Riattiva'}"
+          <button class="btn btn-icon btn-outline-secondary" title="${j.status==='active'?'Metti in pausa':'Riattiva'}"
             onclick="toggleStatus(${j.id},'${j.status}')">
             <i class="bi bi-${j.status==='active'?'pause':'play'}-fill"></i>
           </button>
-          <button class="btn btn-outline-danger" title="Elimina" onclick="deleteJob(${j.id},'${j.name}')">
-            <i class="bi bi-trash"></i>
+          <button class="btn btn-icon btn-outline-secondary" title="Elimina" onclick="deleteJob(${j.id},'${j.name}')">
+            <i class="bi bi-trash3" style="color:var(--danger)"></i>
           </button>
         </div>
       </td>
@@ -62,8 +95,8 @@ async function loadJobs() {
 }
 
 async function runNow(id, name) {
-  if (!confirm(`Avviare subito "${name}"?`)) return;
-  try { await api('POST',`/api/jobs/${id}/run`); showToast('Job avviato in background'); setTimeout(loadJobs,2000); }
+  if (!confirm(`Avviare subito il backup "${name}"?`)) return;
+  try { await api('POST',`/api/jobs/${id}/run`); showToast('Job avviato in background','info'); setTimeout(loadJobs,2000); }
   catch(e) { showToast(e.message,'danger'); }
 }
 
@@ -74,8 +107,8 @@ async function toggleStatus(id, current) {
 }
 
 async function deleteJob(id, name) {
-  if (!confirm(`Eliminare il job "${name}"?`)) return;
-  try { await api('DELETE',`/api/jobs/${id}`); showToast('Job eliminato'); loadJobs(); }
+  if (!confirm(`Eliminare il job "${name}"? Questa azione non può essere annullata.`)) return;
+  try { await api('DELETE',`/api/jobs/${id}`); showToast(`Job "${name}" eliminato`); loadJobs(); }
   catch(e) { showToast(e.message,'danger'); }
 }
 

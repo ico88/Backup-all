@@ -2,44 +2,72 @@
 {% block title %}Log Esecuzione #{{ run_id }}{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h5 class="mb-0"><i class="bi bi-file-text me-2 text-danger"></i>Log Esecuzione <span class="text-muted">#{{ run_id }}</span></h5>
-  <div class="d-flex gap-2">
-    <button class="btn btn-sm btn-outline-secondary" onclick="loadData()"><i class="bi bi-arrow-clockwise"></i> Aggiorna</button>
-    <a href="/history" class="btn btn-sm btn-outline-secondary"><i class="bi bi-arrow-left"></i> Torna allo storico</a>
-  </div>
+<div class="d-flex align-items-center gap-3 mb-4">
+  <a href="/history" class="btn btn-outline-secondary btn-sm btn-icon"><i class="bi bi-arrow-left"></i></a>
+  <div class="page-title"><i class="bi bi-file-text me-2" style="color:var(--cri-red)"></i>Log Esecuzione <span style="color:var(--text-muted)">#{{ run_id }}</span></div>
+  <button class="btn btn-outline-secondary btn-sm ms-auto" onclick="loadData()"><i class="bi bi-arrow-clockwise me-1"></i>Aggiorna</button>
 </div>
 
 <!-- Info run -->
-<div class="card shadow-sm mb-3" id="run-info">
-  <div class="card-body py-2 d-flex gap-4 flex-wrap">
-    <div><small class="text-muted">Job</small><br><strong id="i-job">—</strong></div>
-    <div><small class="text-muted">Avviato</small><br><span id="i-start">—</span></div>
-    <div><small class="text-muted">Durata</small><br><span id="i-dur">—</span></div>
-    <div><small class="text-muted">Dimensione</small><br><span id="i-size">—</span></div>
-    <div><small class="text-muted">Percorso</small><br><code id="i-path">—</code></div>
-    <div><small class="text-muted">Stato</small><br><span id="i-status">—</span></div>
+<div class="card mb-4" id="run-info">
+  <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem">
+    <div><div class="text-muted" style="font-size:.72rem;margin-bottom:.25rem">JOB</div><div class="fw-semibold" id="i-job" style="font-size:.88rem">—</div></div>
+    <div><div class="text-muted" style="font-size:.72rem;margin-bottom:.25rem">STATO</div><div id="i-status">—</div></div>
+    <div><div class="text-muted" style="font-size:.72rem;margin-bottom:.25rem">AVVIATO</div><div style="font-size:.83rem" id="i-start">—</div></div>
+    <div><div class="text-muted" style="font-size:.72rem;margin-bottom:.25rem">DURATA</div><div style="font-size:.83rem" id="i-dur">—</div></div>
+    <div><div class="text-muted" style="font-size:.72rem;margin-bottom:.25rem">DIMENSIONE</div><div style="font-size:.83rem" id="i-size">—</div></div>
+    <div><div class="text-muted" style="font-size:.72rem;margin-bottom:.25rem">INTEGRITÀ</div><div id="i-integrity">—</div></div>
+    <div style="grid-column:1/-1"><div class="text-muted" style="font-size:.72rem;margin-bottom:.25rem">PERCORSO BACKUP</div><div><code style="font-size:.78rem;color:#fbbf24" id="i-path">—</code></div></div>
+  </div>
+</div>
+
+<!-- Checksum -->
+<div id="checksum-row" style="display:none" class="mb-3">
+  <div class="p-2 rounded d-flex align-items-center gap-2" style="background:#0a0c10;border:1px solid var(--card-border);font-family:monospace;font-size:.75rem">
+    <i class="bi bi-fingerprint" style="color:var(--cri-red)"></i>
+    <span style="color:var(--text-muted)">SHA-256:</span>
+    <span id="i-checksum" style="color:#c9d1d9"></span>
   </div>
 </div>
 
 <!-- Log box -->
-<div class="log-box" id="log-box">Caricamento log…</div>
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-terminal me-2"></i>Output</span>
+    <div class="d-flex gap-2 align-items-center">
+      <span id="running-indicator" style="display:none" class="badge-status bs-running" style="font-size:.72rem">In esecuzione…</span>
+      <button class="btn btn-outline-secondary btn-sm btn-icon" onclick="scrollBottom()" title="Scorri in fondo"><i class="bi bi-arrow-down-circle"></i></button>
+    </div>
+  </div>
+  <div class="log-box" id="log-box" style="max-height:55vh;border:none;border-radius:0 0 10px 10px">Caricamento log…</div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 const RUN_ID = {{ run_id }};
-const statusBadge = {
-  success:'<span class="badge bg-success">Successo</span>',
-  failed:'<span class="badge bg-danger">Fallito</span>',
-  running:'<span class="badge bg-primary">In corso</span>',
-  partial:'<span class="badge bg-warning text-dark">Parziale</span>'
-};
-function fmtSize(bytes) {
-  if (!bytes) return '—';
-  if (bytes>1e9) return (bytes/1e9).toFixed(1)+' GB';
-  if (bytes>1e6) return (bytes/1e6).toFixed(1)+' MB';
-  return (bytes/1e3).toFixed(0)+' KB';
+
+const statusBadge = s => ({
+  success: '<span class="badge-status bs-success">Successo</span>',
+  failed:  '<span class="badge-status bs-failed">Fallito</span>',
+  running: '<span class="badge-status bs-running">In corso</span>',
+  partial: '<span class="badge-status bs-partial">Parziale</span>',
+}[s] || s);
+
+function fmtSize(b) {
+  if (!b) return '—';
+  if (b>1e9) return (b/1e9).toFixed(1)+' GB';
+  if (b>1e6) return (b/1e6).toFixed(1)+' MB';
+  return (b/1e3).toFixed(0)+' KB';
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function scrollBottom() {
+  const box = document.getElementById('log-box');
+  box.scrollTop = box.scrollHeight;
 }
 
 async function loadData() {
@@ -47,32 +75,44 @@ async function loadData() {
     api('GET',`/api/runs/${RUN_ID}`),
     api('GET',`/api/runs/${RUN_ID}/logs`)
   ]);
-  // info
+
   document.getElementById('i-job').textContent = run.job_name||'#'+run.job_id;
+  document.getElementById('i-status').innerHTML = statusBadge(run.status);
   document.getElementById('i-start').textContent = run.started_at ? new Date(run.started_at).toLocaleString('it-IT') : '—';
+
   if (run.started_at && run.finished_at) {
     const sec = Math.round((new Date(run.finished_at)-new Date(run.started_at))/1000);
     document.getElementById('i-dur').textContent = sec<60 ? `${sec}s` : `${Math.floor(sec/60)}m ${sec%60}s`;
+  } else if (run.status==='running') {
+    document.getElementById('i-dur').textContent = 'In corso…';
   }
+
   document.getElementById('i-size').textContent = fmtSize(run.size_bytes);
   document.getElementById('i-path').textContent = run.backup_path||'—';
-  document.getElementById('i-status').innerHTML = statusBadge[run.status]||run.status;
 
-  // logs
+  const intEl = document.getElementById('i-integrity');
+  if (run.integrity_verified === true) intEl.innerHTML = '<span class="badge-status bs-success"><i class="bi bi-shield-check me-1"></i>Verificata</span>';
+  else if (run.integrity_verified === false) intEl.innerHTML = '<span class="badge-status bs-failed"><i class="bi bi-shield-x me-1"></i>Fallita</span>';
+  else intEl.innerHTML = '<span style="color:var(--text-muted);font-size:.8rem">—</span>';
+
+  if (run.checksum_sha256) {
+    document.getElementById('checksum-row').style.display='';
+    document.getElementById('i-checksum').textContent = run.checksum_sha256;
+  }
+
+  document.getElementById('running-indicator').style.display = run.status==='running' ? '' : 'none';
+
   const box = document.getElementById('log-box');
-  if (!logs.length) { box.textContent = 'Nessun log disponibile.'; return; }
+  if (!logs.length) { box.textContent='Nessun log disponibile.'; return; }
+
+  const wasAtBottom = box.scrollHeight - box.scrollTop <= box.clientHeight + 50;
   box.innerHTML = logs.map(l=>{
-    const ts = new Date(l.timestamp).toLocaleTimeString('it-IT');
-    return `<div class="log-${l.level}"><span class="opacity-50">[${ts}]</span> <span class="opacity-75">[${l.level}]</span> ${escHtml(l.message)}</div>`;
+    const ts = new Date(l.timestamp).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    return `<div class="log-${l.level}"><span style="opacity:.45;user-select:none">[${ts}]</span> <span style="opacity:.6">[${l.level}]</span> ${escHtml(l.message)}</div>`;
   }).join('');
-  box.scrollTop = box.scrollHeight;
 
-  // Ricarica se ancora in esecuzione
+  if (wasAtBottom || run.status==='running') scrollBottom();
   if (run.status === 'running') setTimeout(loadData, 3000);
-}
-
-function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 loadData();

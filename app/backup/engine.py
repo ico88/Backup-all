@@ -1,4 +1,5 @@
 """Orchestratore backup: coordina VMware, Linux/Windows e QNAP."""
+import hashlib
 import os
 import shutil
 import tempfile
@@ -15,6 +16,24 @@ def _log(db: Session, run: BackupRun, message: str, level: str = "INFO"):
     db.add(entry)
     db.commit()
     print(f"[{level}] {message}")
+
+
+def _sha256_dir(path: str) -> str:
+    """Calcola SHA-256 combinato di tutti i file in una directory."""
+    h = hashlib.sha256()
+    for root, _, files in sorted(os.walk(path)):
+        for fname in sorted(files):
+            fpath = os.path.join(root, fname)
+            h.update(os.path.relpath(fpath, path).encode())
+            with open(fpath, "rb") as f:
+                for chunk in iter(lambda: f.read(65536), b""):
+                    h.update(chunk)
+    return h.hexdigest()
+
+
+def _apply_count_retention(dest_cfg, server_name: str, max_copies: int, log_fn=None):
+    """Mantiene al massimo max_copies backup per job sul QNAP (per conteggio)."""
+    qnap.apply_count_retention(dest_cfg, server_name, max_copies, log_fn)
 
 
 def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> BackupRun:
@@ -60,16 +79,23 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
 
             from app.models import ServerType
             if server.server_type == ServerType.LINUX:
-                log("Backup dati Abulafia (Linux)...")
+                log("Backup dati Linux...")
                 linux.backup_app_data(server, app_dir, log)
                 if server.app_db_type:
                     linux.backup_database(server, app_dir, log)
-
             elif server.server_type == ServerType.WINDOWS:
-                log("Backup dati Gamma/TeamSystem (Windows)...")
+                log("Backup dati Windows...")
                 windows.backup_app_data(server, app_dir, log)
                 if server.app_db_type == "mssql":
                     windows.backup_mssql(server, app_dir, log)
+
+        # ── VERIFICA INTEGRITÀ (pre-trasferimento) ────────────────
+        if job.verify_integrity:
+            log("Calcolo checksum SHA-256 del backup locale...")
+            local_checksum = _sha256_dir(tmp_dir)
+            run.checksum_sha256 = local_checksum
+            db.commit()
+            log(f"Checksum: {local_checksum[:16]}…")
 
         # ── TRASFERIMENTO SU QNAP ────────────────────────────────
         log(f"Invio backup su QNAP ({dest_cfg.dest_type})...")
@@ -90,14 +116,29 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
         else:
             raise ValueError(f"Tipo destinazione sconosciuto: {dest_cfg.dest_type}")
 
-        # ── RETENTION ────────────────────────────────────────────
-        if dest_cfg.max_retention_days:
-            qnap.apply_retention(
-                dest_cfg,
-                os.path.join(dest_cfg.base_path, server.name),
-                dest_cfg.max_retention_days,
-                log
-            )
+        # ── VERIFICA INTEGRITÀ (post-trasferimento) ───────────────
+        if job.verify_integrity and run.checksum_sha256:
+            log("Verifica integrità post-trasferimento via SSH...")
+            try:
+                remote_checksum = qnap.compute_remote_checksum(
+                    dest_cfg,
+                    os.path.join(dest_cfg.base_path, remote_subpath)
+                )
+                if remote_checksum and remote_checksum == run.checksum_sha256:
+                    run.integrity_verified = True
+                    log("Integrità verificata: checksum corrispondente ✓")
+                else:
+                    run.integrity_verified = False
+                    log(f"ATTENZIONE: checksum non corrispondente! locale={run.checksum_sha256[:16]} remoto={str(remote_checksum)[:16]}", "WARNING")
+            except Exception as e:
+                log(f"Verifica integrità remota non disponibile: {e}", "WARNING")
+                run.integrity_verified = None
+            db.commit()
+
+        # ── RETENTION (per numero copie) ──────────────────────────
+        if job.retention_copies and job.retention_copies > 0:
+            log(f"Applicazione retention: max {job.retention_copies} copie...")
+            _apply_count_retention(dest_cfg, server.name, job.retention_copies, log)
 
         # ── SUCCESSO ─────────────────────────────────────────────
         run.status = RunStatus.SUCCESS
@@ -117,8 +158,15 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
         job.last_run_status = RunStatus.FAILED
         db.commit()
         log(f"ERRORE: {exc}", "ERROR")
-        raise
+
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # ── NOTIFICA EMAIL ────────────────────────────────────────────
+    try:
+        from app.notifications import notify_backup_result
+        notify_backup_result(db, job, run)
+    except Exception as e:
+        print(f"[WARN] Notifica email fallita: {e}")
 
     return run
