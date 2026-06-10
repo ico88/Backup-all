@@ -285,14 +285,28 @@ def stream_vm_to_remote(host_cfg, vm_name: str, dest_cfg, remote_path: str, log_
         ssh_env = {"SSHPASS": qnap_pass} if qnap_pass else {}
 
         # Crea directory remota
+        ssh_opts = [
+            "-p", str(qnap_port),
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "LogLevel=ERROR",        # sopprime warning post-quantum e simili
+            "-o", "BatchMode=yes",
+        ]
         ssh_pre = ["sshpass", "-e", "ssh"] if qnap_pass else ["ssh"]
-        ssh_pre += ["-p", str(qnap_port), "-o", "StrictHostKeyChecking=no",
-                    f"{qnap_user}@{qnap_host}"]
+        ssh_pre += ssh_opts + [f"{qnap_user}@{qnap_host}"]
         import os as _os
         _os_env = _os.environ.copy()
         _os_env.update(ssh_env)
-        subprocess.run(ssh_pre + [f"mkdir -p '{remote_path}'"],
-                       env=_os_env, capture_output=True)
+
+        # Crea la directory remota e verifica
+        mkdir_res = subprocess.run(
+            ssh_pre + [f"mkdir -p '{remote_path}'"],
+            env=_os_env, capture_output=True, text=True
+        )
+        if mkdir_res.returncode != 0:
+            raise RuntimeError(
+                f"Impossibile creare la directory sul QNAP '{remote_path}': "
+                f"{mkdir_res.stderr.strip() or mkdir_res.stdout.strip()}"
+            )
 
         total = len(files)
         for idx, f in enumerate(files, 1):
@@ -309,25 +323,37 @@ def stream_vm_to_remote(host_cfg, vm_name: str, dest_cfg, remote_path: str, log_
                 log_fn(f"Stream [{idx}/{total}] {fname}{size_info} → QNAP...")
 
             # curl -k  → sshpass ssh "cat > remote_file"
+            # Usa variabile bash per evitare problemi di quoting con spazi nel path
+            remote_file_escaped = remote_file.replace("'", "'\\''")
+            ssh_cmd = f"cat > '{remote_file_escaped}'"
+
             curl_cmd = [
                 "curl", "-sk", "--retry", "2",
+                "-o", "-",
                 "-b", f"vmware_soap_session={cookie_val}",
                 esxi_url,
             ]
-            ssh_write = ssh_pre + [f"cat > '{remote_file}'"]
+            ssh_write = ssh_pre + [ssh_cmd]
 
-            curl = subprocess.Popen(curl_cmd, stdout=subprocess.PIPE)
-            ssh  = subprocess.Popen(ssh_write, stdin=curl.stdout,
-                                    env=_os_env, stdout=subprocess.PIPE,
+            curl = subprocess.Popen(curl_cmd, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE)
+            ssh  = subprocess.Popen(ssh_write, stdin=curl.stdout,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                    env=_os_env)
             curl.stdout.close()
             _, ssh_err = ssh.communicate()
+            _, curl_err = curl.communicate()
             curl.wait()
 
-            if curl.returncode not in (0, None) or ssh.returncode != 0:
+            if curl.returncode != 0:
                 raise RuntimeError(
-                    f"Stream fallito per {fname}: curl rc={curl.returncode}, "
-                    f"ssh rc={ssh.returncode}, err={ssh_err.decode()[:200]}"
+                    f"curl fallito per {fname} (rc={curl.returncode}): "
+                    f"{curl_err.decode(errors='replace')[:400]}"
+                )
+            if ssh.returncode != 0:
+                err_text = ssh_err.decode(errors='replace').strip()
+                raise RuntimeError(
+                    f"SSH write fallito per {fname} (rc={ssh.returncode}): {err_text[:400]}"
                 )
 
         if log_fn:
