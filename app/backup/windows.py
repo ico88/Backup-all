@@ -166,9 +166,17 @@ $smbUser = {_ps_quote(smb_user)}
 $smbPassword = {_ps_quote(smb_password)}
 $logPath = {_ps_quote(log_path)}
 
-Start-Transcript -Path $logPath -Force | Out-Null
+function Write-BackupLog([string]$message) {{
+    $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $message"
+    Add-Content -Path $logPath -Value $line
+    Write-Output $line
+}}
+
+Write-BackupLog "Script avviato come $([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)"
+Write-BackupLog "Target backup: $backupTarget"
 try {{
     if ($smbUser) {{
+        Write-BackupLog "Pulizia connessioni SMB esistenti verso $uncBase"
         & cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
         $candidateUsers = @($smbUser)
         if ($smbUser -notmatch '[\\@]') {{
@@ -178,6 +186,7 @@ try {{
         $lastNetUseOutput = ''
         $lastNetUseCode = 0
         foreach ($candidateUser in $candidateUsers) {{
+            Write-BackupLog "Tentativo connessione SMB con utente $candidateUser"
             $netUseArgs = @('use', $uncBase, $smbPassword, "/user:$candidateUser", '/persistent:no')
             $oldPreference = $ErrorActionPreference
             $ErrorActionPreference = 'Continue'
@@ -187,8 +196,10 @@ try {{
             $lastNetUseOutput = "utente=$candidateUser; output=$netUseOutput"
             if ($lastNetUseCode -eq 0) {{
                 $connected = $true
+                Write-BackupLog "Connessione SMB riuscita con utente $candidateUser"
                 break
             }}
+            Write-BackupLog "Connessione SMB fallita con codice $lastNetUseCode: $netUseOutput"
             & cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
         }}
         if (-not $connected) {{
@@ -196,19 +207,27 @@ try {{
         }}
     }}
 
+    Write-BackupLog "Creazione cartella destinazione $backupTarget"
     New-Item -ItemType Directory -Path $backupTarget -Force | Out-Null
+    Write-BackupLog "Avvio wbadmin"
+    $oldPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     $output = & wbadmin start backup -backupTarget:$backupTarget -include:C: -allCritical -quiet 2>&1
     $rc = $LASTEXITCODE
-    Write-Output $output
+    $ErrorActionPreference = $oldPreference
+    Write-BackupLog "$output"
     if ($rc -ne 0) {{
         throw "WBADMIN_FAIL:$rc"
     }}
-    Write-Output 'WBADMIN_OK'
+    Write-BackupLog 'WBADMIN_OK'
+    exit 0
+}} catch {{
+    Write-BackupLog "ERRORE: $($_.Exception.Message)"
+    exit 1
 }} finally {{
     if ($smbUser) {{
         & cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
     }}
-    Stop-Transcript | Out-Null
 }}
 """
     script_b64 = base64.b64encode(backup_script.encode("utf-8")).decode("ascii")
