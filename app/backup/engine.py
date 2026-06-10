@@ -204,11 +204,19 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
         # ── GUARDIA: cartella vuota = nessun dato raccolto ───────
         total_files = sum(len(files) for _, _, files in os.walk(tmp_dir))
         if total_files == 0:
-            raise RuntimeError(
-                "Nessun dato raccolto nella cartella temporanea — "
-                "verifica che la sorgente sia raggiungibile e che il tipo di backup "
-                "sia compatibile con la configurazione (vm_name, vmware_host, percorsi app)."
-            )
+            hints = []
+            if job.backup_type in (BackupType.APP_DATA, BackupType.FULL):
+                if not server.app_data_paths or server.app_data_paths == "[]":
+                    hints.append("nessun percorso dati configurato sulla sorgente (campo 'Percorsi dati app')")
+            if job.backup_type == BackupType.VM_SNAPSHOT or (
+                    job.backup_type == BackupType.FULL and server.vm_name and server.vmware_host):
+                hints.append("export VM fallito — controlla connettività ESXi e permessi")
+            if not hints:
+                hints.append(
+                    "per backup VM intera imposta tipo 'VM Snapshot' e configura vm_name + host ESXi sulla sorgente; "
+                    "per backup dati app configura i percorsi nella sorgente"
+                )
+            raise RuntimeError("Nessun dato raccolto — " + "; ".join(hints))
 
         # ── VERIFICA INTEGRITÀ (pre-trasferimento) ────────────────
         if job.verify_integrity:
