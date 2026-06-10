@@ -159,6 +159,20 @@
                 </div>
               </div>
               <hr class="my-3">
+              <h6 class="text-muted mb-3">Backup VM su ESXi <span class="fw-normal text-muted" style="font-size:.8rem">(per tipo "VM Snapshot" — opzionale)</span></h6>
+              <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                  <label class="form-label">Host ESXi</label>
+                  <select class="form-select" id="w-esxi-host">
+                    <option value="">— nessuno (solo backup dati app) —</option>
+                  </select>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">Nome VM su ESXi</label>
+                  <input class="form-control" id="w-vm-name" placeholder="es. WIN-ERP-01">
+                </div>
+              </div>
+              <hr class="my-3">
               <h6 class="text-muted mb-3">Dati applicazione <span class="fw-normal">(opzionale)</span></h6>
               <div class="row g-3">
                 <div class="col-md-5">
@@ -444,6 +458,7 @@ function switchTab(type) {
     document.getElementById('tab-' + t).classList.toggle('active', t === type);
   });
   if (type === 'vmware') loadVmwareHosts();
+  if (type === 'windows') populateWindowsEsxiSelect();
   if (type === 'xcpng') loadXCPHosts();
 }
 
@@ -575,6 +590,20 @@ async function saveEsxiHost() {
     bootstrap.Collapse.getInstance(document.getElementById('add-esxi-form'))?.hide();
     loadVmwareHosts();
   } catch(e) { showToast(e.message, 'danger'); }
+}
+
+async function populateWindowsEsxiSelect() {
+  if (!vmwareHosts.length) await loadVmwareHosts();
+  const sel = document.getElementById('w-esxi-host');
+  if (!sel) return;
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— nessuno (solo backup dati app) —</option>';
+  vmwareHosts.forEach(h => {
+    const o = document.createElement('option');
+    o.value = h.id; o.textContent = `${h.name} (${h.host})`;
+    sel.appendChild(o);
+  });
+  if (cur) sel.value = cur;
 }
 
 async function deleteEsxiHost(id, name) {
@@ -709,6 +738,8 @@ document.getElementById('form-windows').addEventListener('submit', async e => {
     winrm_port: +document.getElementById('w-port').value || 5985,
     username: document.getElementById('w-user').value,
     password: document.getElementById('w-pass').value || null,
+    vmware_host_id: +document.getElementById('w-esxi-host').value || null,
+    vm_name: document.getElementById('w-vm-name').value || null,
     app_name: document.getElementById('w-app-name').value || null,
     app_data_paths: parsePaths(document.getElementById('w-paths').value),
     app_db_type: document.getElementById('w-db-type').value || null,
@@ -812,6 +843,7 @@ function openEdit(id) {
         <i class="bi bi-info-circle me-1"></i>Per cambiare host XCP-ng o VM, elimina e ricrea la sorgente.
       </div></div>`;
   } else if (s.server_type === 'windows') {
+    const esxiOpts = vmwareHosts.map(h=>`<option value="${h.id}" ${s.vmware_host_id==h.id?'selected':''}>${h.name} (${h.host})</option>`).join('');
     f.innerHTML = `
       <div class="col-md-5"><label class="form-label">Nome</label>
         <input class="form-control" id="ef-name" value="${s.name||''}"></div>
@@ -823,6 +855,12 @@ function openEdit(id) {
         <input class="form-control" id="ef-user" value="${s.username||''}"></div>
       <div class="col-md-6"><label class="form-label">Password <span class="text-muted fw-normal small">(vuoto = invariata)</span></label>
         <input type="password" class="form-control" id="ef-pass" placeholder="••••••••"></div>
+      <div class="col-md-6"><label class="form-label">Host ESXi <span class="text-muted fw-normal small">(per VM Snapshot)</span></label>
+        <select class="form-select" id="ef-esxi-host">
+          <option value="">— nessuno —</option>${esxiOpts}
+        </select></div>
+      <div class="col-md-6"><label class="form-label">Nome VM su ESXi</label>
+        <input class="form-control" id="ef-vm-name" value="${s.vm_name||''}" placeholder="es. WIN-ERP-01"></div>
       <div class="col-md-6"><label class="form-label">Nome applicazione</label>
         <input class="form-control" id="ef-app-name" value="${s.app_name||''}"></div>`;
   } else {
@@ -877,6 +915,8 @@ async function saveEdit() {
       winrm_port: isWin ? +document.getElementById('ef-port').value : 5985,
       username: document.getElementById('ef-user').value,
       password: document.getElementById('ef-pass').value || null,
+      vmware_host_id: isWin ? (+document.getElementById('ef-esxi-host')?.value || null) : null,
+      vm_name: isWin ? (document.getElementById('ef-vm-name')?.value || null) : null,
       app_name: document.getElementById('ef-app-name').value || null,
       app_data_paths: s.app_data_paths || [],
       app_db_type: s.app_db_type || null,
