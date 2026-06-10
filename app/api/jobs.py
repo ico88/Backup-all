@@ -69,6 +69,29 @@ def run_job_now(job_id: int, background_tasks: BackgroundTasks, db: Session = De
     return {"ok": True, "message": f"Job '{job.name}' avviato in background"}
 
 
+@router.patch("/{job_id}")
+def update_job(job_id: int, data: JobCreate, db: Session = Depends(get_db)):
+    job = db.get(BackupJob, job_id)
+    if not job:
+        raise HTTPException(404, "Job non trovato")
+    job.name = data.name
+    job.description = data.description
+    job.server_id = data.server_id
+    job.destination_id = data.destination_id
+    job.backup_type = data.backup_type
+    job.cron_expression = data.cron_expression
+    job.retention_copies = data.retention_copies
+    job.compression = data.compression
+    job.notify_email = data.notify_email
+    job.notify_on_success = data.notify_on_success
+    job.notify_on_failure = data.notify_on_failure
+    job.verify_integrity = data.verify_integrity
+    db.commit()
+    from app.scheduler import load_jobs_from_db
+    load_jobs_from_db()
+    return _serialize(job)
+
+
 @router.patch("/{job_id}/status")
 def set_job_status(job_id: int, status: JobStatus, db: Session = Depends(get_db)):
     job = db.get(BackupJob, job_id)
