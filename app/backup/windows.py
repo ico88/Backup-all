@@ -169,10 +169,29 @@ Start-Transcript -Path $logPath -Force | Out-Null
 try {{
     if ($smbUser) {{
         & cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
-        $netUseArgs = @('use', $uncBase, $smbPassword, "/user:$smbUser", '/persistent:no')
-        $netUseOutput = & net.exe @netUseArgs 2>&1
-        if ($LASTEXITCODE -ne 0) {{
-            throw "Connessione SMB fallita ($LASTEXITCODE): $netUseOutput"
+        $candidateUsers = @($smbUser)
+        if ($smbUser -notmatch '[\\@]') {{
+            $candidateUsers += "{dest_cfg.host}\$smbUser"
+        }}
+        $connected = $false
+        $lastNetUseOutput = ''
+        $lastNetUseCode = 0
+        foreach ($candidateUser in $candidateUsers) {{
+            $netUseArgs = @('use', $uncBase, $smbPassword, "/user:$candidateUser", '/persistent:no')
+            $oldPreference = $ErrorActionPreference
+            $ErrorActionPreference = 'Continue'
+            $netUseOutput = & net.exe @netUseArgs 2>&1
+            $lastNetUseCode = $LASTEXITCODE
+            $ErrorActionPreference = $oldPreference
+            $lastNetUseOutput = "utente=$candidateUser; output=$netUseOutput"
+            if ($lastNetUseCode -eq 0) {{
+                $connected = $true
+                break
+            }}
+            & cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
+        }}
+        if (-not $connected) {{
+            throw "Connessione SMB fallita ($lastNetUseCode): $lastNetUseOutput"
         }}
     }}
 
