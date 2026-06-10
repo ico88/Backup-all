@@ -126,8 +126,28 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
                 return run
 
         else:
-            # ── SNAPSHOT opzionale per Linux/Windows su VMware ───────
-            if job.backup_type in (BackupType.VM_SNAPSHOT, BackupType.FULL):
+            # ── VM SNAPSHOT per Linux/Windows su VMware: streaming diretto ──
+            if job.backup_type == BackupType.VM_SNAPSHOT:
+                if not server.vm_name or not server.vmware_host:
+                    raise ValueError(
+                        "backup_type VM_SNAPSHOT richiede vm_name e vmware_host configurati sulla sorgente"
+                    )
+                remote_path = os.path.join(dest_cfg.base_path, remote_subpath).replace("\\", "/")
+                log(f"Avvio streaming VM → QNAP {dest_cfg.host}:{remote_path}...")
+                vmware.stream_vm_to_remote(server.vmware_host, server.vm_name, dest_cfg, remote_path, log)
+                run.status = RunStatus.SUCCESS
+                run.backup_path = remote_subpath
+                run.finished_at = datetime.now(timezone.utc)
+                job.last_run_at = run.finished_at
+                job.last_run_status = RunStatus.SUCCESS
+                db.commit()
+                log("Backup VM completato.")
+                if job.retention_copies and job.retention_copies > 0:
+                    qnap.apply_count_retention(dest_cfg, server.name, job.retention_copies, log)
+                return run
+
+            # ── SNAPSHOT OVF incluso in FULL (con disco locale) ──────
+            if job.backup_type == BackupType.FULL:
                 if server.vm_name and server.vmware_host:
                     snap_name = f"backup_{timestamp}"
                     vm_dir = os.path.join(tmp_dir, "vm_export")
@@ -180,6 +200,15 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
                 windows.backup_app_data(server, app_dir, log)
                 if server.app_db_type == "mssql":
                     windows.backup_mssql(server, app_dir, log)
+
+        # ── GUARDIA: cartella vuota = nessun dato raccolto ───────
+        total_files = sum(len(files) for _, _, files in os.walk(tmp_dir))
+        if total_files == 0:
+            raise RuntimeError(
+                "Nessun dato raccolto nella cartella temporanea — "
+                "verifica che la sorgente sia raggiungibile e che il tipo di backup "
+                "sia compatibile con la configurazione (vm_name, vmware_host, percorsi app)."
+            )
 
         # ── VERIFICA INTEGRITÀ (pre-trasferimento) ────────────────
         if job.verify_integrity:
