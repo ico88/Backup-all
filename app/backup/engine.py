@@ -81,31 +81,29 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
 
         from app.models import ServerType
 
-        # ── SORGENTE VMWARE: snapshot + OVF export ────────────────
+        # ── SORGENTE VMWARE: streaming diretto ESXi → QNAP ───────
         if server.server_type == ServerType.VMWARE:
             if not server.vm_name or not server.vmware_host:
-                log("vm_name o vmware_host non configurati, skip snapshot", "WARNING")
+                log("vm_name o vmware_host non configurati, skip backup VMware", "WARNING")
             else:
-                snap_name = f"backup_{timestamp}"
-                vm_dir = os.path.join(tmp_dir, "vm_export")
-                os.makedirs(vm_dir)
-                # Prova snapshot (richiede licenza ESXi non-free)
-                snap_created = False
-                try:
-                    log(f"Creazione snapshot VMware '{snap_name}'...")
-                    vmware.create_snapshot(server.vmware_host, server.vm_name, snap_name, log)
-                    snap_created = True
-                except Exception as snap_err:
-                    err_str = str(snap_err)
-                    if "RestrictedVersion" in err_str or "Current license" in err_str:
-                        log("ESXi licenza Free: snapshot API non supportati, export OVF diretto...", "WARNING")
-                    else:
-                        raise
-                log("Export OVF in corso (può richiedere diversi minuti)...")
-                _export_vm(server.vmware_host, server.vm_name, vm_dir, log)
-                if snap_created:
-                    log("Rimozione snapshot temporaneo...")
-                    vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)
+                # Streaming diretto: nessun disco locale usato
+                remote_path = os.path.join(dest_cfg.base_path, remote_subpath).replace("\\", "/")
+                log(f"Avvio streaming VM → QNAP {dest_cfg.host}:{remote_path}...")
+                vmware.stream_vm_to_remote(
+                    server.vmware_host, server.vm_name, dest_cfg, remote_path, log
+                )
+                # Aggiorna stato e ritorna subito (nessun rsync locale necessario)
+                run.status = RunStatus.SUCCESS
+                run.backup_path = remote_subpath
+                run.finished_at = datetime.now(timezone.utc)
+                job.last_run_at = run.finished_at
+                job.last_run_status = RunStatus.SUCCESS
+                db.commit()
+                log("Backup VMware completato.")
+                # Retention
+                if job.retention_copies and job.retention_copies > 0:
+                    qnap.apply_count_retention(dest_cfg, server.name, job.retention_copies, log)
+                return run
 
         else:
             # ── SNAPSHOT opzionale per Linux/Windows su VMware ───────

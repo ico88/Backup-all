@@ -231,6 +231,111 @@ def export_vm_datastore(host_cfg, vm_name: str, dest_dir: str, log_fn=None) -> s
         Disconnect(si)
 
 
+def stream_vm_to_remote(host_cfg, vm_name: str, dest_cfg, remote_path: str, log_fn=None):
+    """
+    Streaming diretto ESXi → QNAP via SSH: zero spazio disco locale.
+    Per ogni file della VM: curl (ESXi HTTPS) | ssh (QNAP) cat > file
+    """
+    import shutil, subprocess
+    from app.crypto import decrypt as _dec
+
+    si = _connect(host_cfg)
+    try:
+        vm = _find_vm(si, vm_name)
+        if not vm:
+            raise ValueError(f"VM '{vm_name}' non trovata su ESXi")
+
+        vm_path   = vm.config.files.vmPathName
+        ds_name   = vm_path.split("]")[0].lstrip("[")
+        vm_folder = vm_path.split("] ")[1].rsplit("/", 1)[0]
+
+        # Lista file via API (read-only, consentito su Free)
+        content = si.RetrieveContent()
+        search_spec = vim.host.DatastoreBrowser.SearchSpec()
+        search_spec.matchPattern = ["*.vmx", "*.vmdk", "*.nvram", "*.vmsd"]
+        ds_obj = next((d for d in content.rootFolder.childEntity[0].datastore
+                       if d.name == ds_name), None)
+        if not ds_obj:
+            raise ValueError(f"Datastore '{ds_name}' non trovato")
+
+        task = ds_obj.browser.SearchDatastore_Task(
+            datastorePath=f"[{ds_name}] {vm_folder}",
+            searchSpec=search_spec,
+        )
+        _wait_task(task, None)
+        files = task.info.result.file if task.info.result else []
+        if not files:
+            raise ValueError(f"Nessun file VM trovato in [{ds_name}] {vm_folder}")
+
+        # Cookie sessione ESXi per autenticare curl
+        cookie_raw = si._stub.cookie
+        cookie_val = cookie_raw.split('"')[1] if '"' in cookie_raw else cookie_raw
+        esxi_port  = host_cfg.port or 443
+
+        # Credenziali QNAP
+        qnap_pass = _dec(dest_cfg.password_enc) if dest_cfg.password_enc else ""
+        qnap_port = dest_cfg.port or 22
+        qnap_user = dest_cfg.username
+        qnap_host = dest_cfg.host
+
+        has_sshpass = shutil.which("sshpass") is not None
+        if qnap_pass and not has_sshpass:
+            raise RuntimeError("sshpass non installato — esegui: sudo apt install sshpass")
+
+        ssh_env = {"SSHPASS": qnap_pass} if qnap_pass else {}
+
+        # Crea directory remota
+        ssh_pre = ["sshpass", "-e", "ssh"] if qnap_pass else ["ssh"]
+        ssh_pre += ["-p", str(qnap_port), "-o", "StrictHostKeyChecking=no",
+                    f"{qnap_user}@{qnap_host}"]
+        import os as _os
+        _os_env = _os.environ.copy()
+        _os_env.update(ssh_env)
+        subprocess.run(ssh_pre + [f"mkdir -p '{remote_path}'"],
+                       env=_os_env, capture_output=True)
+
+        total = len(files)
+        for idx, f in enumerate(files, 1):
+            fname = f.path
+            enc_path = urllib.parse.quote(f"{vm_folder}/{fname}")
+            esxi_url = (f"https://{host_cfg.host}:{esxi_port}/folder/{enc_path}"
+                        f"?dcPath=ha-datacenter&dsName={urllib.parse.quote(ds_name)}")
+            remote_file = f"{remote_path}/{fname}"
+
+            size_info = ""
+            if hasattr(f, "fileSize") and f.fileSize:
+                size_info = f" ({round(f.fileSize/1024/1024/1024, 2)} GB)"
+            if log_fn:
+                log_fn(f"Stream [{idx}/{total}] {fname}{size_info} → QNAP...")
+
+            # curl -k  → sshpass ssh "cat > remote_file"
+            curl_cmd = [
+                "curl", "-sk", "--retry", "2",
+                "-b", f"vmware_soap_session={cookie_val}",
+                esxi_url,
+            ]
+            ssh_write = ssh_pre + [f"cat > '{remote_file}'"]
+
+            curl = subprocess.Popen(curl_cmd, stdout=subprocess.PIPE)
+            ssh  = subprocess.Popen(ssh_write, stdin=curl.stdout,
+                                    env=_os_env, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE)
+            curl.stdout.close()
+            _, ssh_err = ssh.communicate()
+            curl.wait()
+
+            if curl.returncode not in (0, None) or ssh.returncode != 0:
+                raise RuntimeError(
+                    f"Stream fallito per {fname}: curl rc={curl.returncode}, "
+                    f"ssh rc={ssh.returncode}, err={ssh_err.decode()[:200]}"
+                )
+
+        if log_fn:
+            log_fn(f"VM '{vm_name}' trasferita su QNAP in {remote_path}")
+    finally:
+        Disconnect(si)
+
+
 def export_vm_ovf_ovftool(host_cfg, vm_name: str, dest_dir: str, log_fn=None) -> str:
     """
     Esporta la VM come OVF usando ovftool — compatibile con ESXi Free License.
