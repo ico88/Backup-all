@@ -33,8 +33,19 @@ def rsync_to_qnap(dest_cfg, local_path: str, remote_subpath: str, log_fn=None) -
     else:
         ssh_cmd = f"ssh -p {port} -o StrictHostKeyChecking=no"
 
+    # Crea la directory di destinazione sul NAS via SSH prima di rsync
+    # (--mkpath non è supportato su rsync < 3.2.3, es. QNAP con rsync 3.0.x)
+    if password:
+        mkdir_prefix = ["sshpass", "-e", "ssh", "-p", str(port), "-o", "StrictHostKeyChecking=no"]
+    else:
+        mkdir_prefix = ["ssh", "-p", str(port), "-o", "StrictHostKeyChecking=no"]
+    subprocess.run(
+        mkdir_prefix + [f"{user}@{host}", f"mkdir -p '{remote_path}'"],
+        capture_output=True, env=env
+    )
+
     cmd = [
-        "rsync", "-avz", "--stats", "--mkpath",
+        "rsync", "-avz", "--stats",
         "-e", ssh_cmd,
         local_path + "/" if not local_path.endswith("/") else local_path,
         f"{user}@{host}:{remote_path}/",

@@ -60,30 +60,52 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
         # ── SORGENTE VMWARE: snapshot + OVF export ────────────────
         if server.server_type == ServerType.VMWARE:
             if not server.vm_name or not server.vmware_host:
-                raise ValueError("Sorgente VMware: vm_name o vmware_host non configurati")
-            snap_name = f"backup_{timestamp}"
-            log(f"Creazione snapshot VMware '{snap_name}'...")
-            vmware.create_snapshot(server.vmware_host, server.vm_name, snap_name, log)
-            vm_dir = os.path.join(tmp_dir, "vm_export")
-            os.makedirs(vm_dir)
-            log("Export OVF in corso (può richiedere diversi minuti)...")
-            vmware.export_vm_ovf(server.vmware_host, server.vm_name, vm_dir, log)
-            log("Rimozione snapshot temporaneo...")
-            vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)
+                log("vm_name o vmware_host non configurati, skip snapshot", "WARNING")
+            else:
+                snap_name = f"backup_{timestamp}"
+                vm_dir = os.path.join(tmp_dir, "vm_export")
+                os.makedirs(vm_dir)
+                # Prova snapshot (richiede licenza ESXi non-free)
+                snap_created = False
+                try:
+                    log(f"Creazione snapshot VMware '{snap_name}'...")
+                    vmware.create_snapshot(server.vmware_host, server.vm_name, snap_name, log)
+                    snap_created = True
+                except Exception as snap_err:
+                    err_str = str(snap_err)
+                    if "RestrictedVersion" in err_str or "Current license" in err_str:
+                        log("ESXi licenza Free: snapshot API non supportati, export OVF diretto...", "WARNING")
+                    else:
+                        raise
+                log("Export OVF in corso (può richiedere diversi minuti)...")
+                vmware.export_vm_ovf(server.vmware_host, server.vm_name, vm_dir, log)
+                if snap_created:
+                    log("Rimozione snapshot temporaneo...")
+                    vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)
 
         else:
             # ── SNAPSHOT opzionale per Linux/Windows su VMware ───────
             if job.backup_type in (BackupType.VM_SNAPSHOT, BackupType.FULL):
                 if server.vm_name and server.vmware_host:
                     snap_name = f"backup_{timestamp}"
-                    log(f"Creazione snapshot VMware '{snap_name}'...")
-                    vmware.create_snapshot(server.vmware_host, server.vm_name, snap_name, log)
                     vm_dir = os.path.join(tmp_dir, "vm_export")
                     os.makedirs(vm_dir)
+                    snap_created = False
+                    try:
+                        log(f"Creazione snapshot VMware '{snap_name}'...")
+                        vmware.create_snapshot(server.vmware_host, server.vm_name, snap_name, log)
+                        snap_created = True
+                    except Exception as snap_err:
+                        err_str = str(snap_err)
+                        if "RestrictedVersion" in err_str or "Current license" in err_str:
+                            log("ESXi licenza Free: snapshot API non supportati, export OVF diretto...", "WARNING")
+                        else:
+                            raise
                     log("Export VM OVF...")
                     vmware.export_vm_ovf(server.vmware_host, server.vm_name, vm_dir, log)
-                    log("Rimozione snapshot temporaneo...")
-                    vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)
+                    if snap_created:
+                        log("Rimozione snapshot temporaneo...")
+                        vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)
 
             # ── BACKUP SISTEMA WINDOWS (bare-metal wbadmin) ──────────
             if (job.backup_type == BackupType.FULL
