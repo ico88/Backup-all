@@ -240,6 +240,7 @@ try {{
 $ErrorActionPreference = 'Stop'
 Remove-Item {_ps_quote(script_b64_path)} -Force -ErrorAction SilentlyContinue
 Remove-Item {_ps_quote(script_path)} -Force -ErrorAction SilentlyContinue
+Remove-Item {_ps_quote(log_path)} -Force -ErrorAction SilentlyContinue
 New-Item -ItemType File -Path {_ps_quote(script_b64_path)} -Force | Out-Null
 """
     init_result = session.run_ps(init_upload_cmd)
@@ -273,7 +274,8 @@ $scriptBytes = [Convert]::FromBase64String((Get-Content $scriptB64Path -Raw))
 [System.IO.File]::WriteAllBytes($scriptPath, $scriptBytes)
 $scriptText = Get-Content $scriptPath -Raw
 Set-Content -Path $scriptPath -Value $scriptText -Encoding UTF8
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+$taskCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" >> `"{_ps_quote(log_path)[1:-1]}`" 2>&1"
+$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c $taskCommand"
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 24) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -User $taskUser -Password $taskPassword -RunLevel Highest -Force | Out-Null
