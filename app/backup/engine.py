@@ -187,6 +187,16 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
         # ── DATI APPLICATIVI (solo Linux/Windows) ────────────────
         if (server.server_type != ServerType.VMWARE
                 and job.backup_type in (BackupType.APP_DATA, BackupType.FULL)):
+
+            # Avviso se la sorgente ha vmware_host ma il tipo non è VM_SNAPSHOT
+            if server.vmware_host and server.vm_name and job.backup_type != BackupType.VM_SNAPSHOT:
+                log(
+                    f"ATTENZIONE: questa sorgente ha host ESXi '{server.vmware_host.name}' e VM '{server.vm_name}' configurati "
+                    "ma il job è di tipo APP_DATA/FULL — per fare il backup della VM intera "
+                    "cambia il tipo job in 'VM Snapshot' dalla pagina Job di Backup.",
+                    "WARNING"
+                )
+
             app_dir = os.path.join(tmp_dir, "app_data")
             os.makedirs(app_dir)
 
