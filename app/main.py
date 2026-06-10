@@ -166,3 +166,10 @@ async def replication_page(request: Request):
     if not _check_session(request):
         return RedirectResponse(url="/login")
     return templates.TemplateResponse("replication.html", {"request": request})
+
+
+@app.get("/docs")
+async def docs_page(request: Request):
+    if not _check_session(request):
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("docs.html", {"request": request})

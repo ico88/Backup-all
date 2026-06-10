@@ -1,0 +1,472 @@
+{% extends "base.html" %}
+{% block title %}Guida alla configurazione{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-xl-9">
+
+    <div class="d-flex align-items-center gap-3 mb-4">
+      <div class="page-title"><i class="bi bi-book me-2" style="color:var(--cri-red)"></i>Guida alla configurazione</div>
+    </div>
+
+    <!-- Indice -->
+    <div class="card mb-4">
+      <div class="card-body py-3">
+        <div class="d-flex flex-wrap gap-2">
+          <a href="#requisiti" class="btn btn-sm btn-outline-secondary">Requisiti</a>
+          <a href="#passo1" class="btn btn-sm btn-outline-secondary">1 · Sorgenti</a>
+          <a href="#passo2" class="btn btn-sm btn-outline-secondary">2 · Destinazioni</a>
+          <a href="#passo3" class="btn btn-sm btn-outline-secondary">3 · Job di backup</a>
+          <a href="#passo4" class="btn btn-sm btn-outline-secondary">4 · Replica VM</a>
+          <a href="#impostazioni" class="btn btn-sm btn-outline-secondary">Impostazioni</a>
+          <a href="#faq" class="btn btn-sm btn-outline-secondary">FAQ</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Panoramica -->
+    <div class="card mb-4">
+      <div class="card-header fw-semibold"><i class="bi bi-map me-2" style="color:var(--cri-red)"></i>Come funziona</div>
+      <div class="card-body">
+        <p class="text-muted mb-3">Il sistema lavora con tre blocchi fondamentali che si collegano tra loro:</p>
+        <div class="row g-3 text-center mb-3">
+          <div class="col-md-4">
+            <div class="p-3 rounded" style="background:rgba(229,57,53,.08);border:1px solid rgba(229,57,53,.2)">
+              <i class="bi bi-server fs-2 mb-2" style="color:var(--cri-red)"></i>
+              <div class="fw-semibold">Sorgente</div>
+              <small class="text-muted">Il server da proteggere<br>(Linux, Windows, VMware)</small>
+            </div>
+          </div>
+          <div class="col-md-4 d-flex align-items-center justify-content-center">
+            <div class="text-center">
+              <i class="bi bi-arrow-right fs-3 text-muted mb-2 d-block"></i>
+              <div class="p-3 rounded" style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2)">
+                <i class="bi bi-briefcase fs-2 mb-2" style="color:#fbbf24"></i>
+                <div class="fw-semibold">Job di Backup</div>
+                <small class="text-muted">Regola quando e come<br>eseguire il backup</small>
+              </div>
+              <i class="bi bi-arrow-right fs-3 text-muted mt-2 d-block"></i>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="p-3 rounded" style="background:rgba(74,139,87,.08);border:1px solid rgba(74,139,87,.2)">
+              <i class="bi bi-hdd-network fs-2 mb-2" style="color:#4ade80"></i>
+              <div class="fw-semibold">Destinazione</div>
+              <small class="text-muted">Il NAS/QNAP dove<br>salvare i dati</small>
+            </div>
+          </div>
+        </div>
+        <div class="alert-dark-info">
+          <i class="bi bi-lightbulb me-2"></i>
+          <strong>Ordine consigliato:</strong> configura prima le sorgenti, poi le destinazioni, infine crea i job che le collegano.
+        </div>
+      </div>
+    </div>
+
+    <!-- Requisiti -->
+    <div class="card mb-4" id="requisiti">
+      <div class="card-header fw-semibold"><i class="bi bi-check2-square me-2" style="color:var(--cri-red)"></i>Requisiti di sistema</div>
+      <div class="card-body">
+        <div class="row g-4">
+          <div class="col-md-4">
+            <h6 class="text-muted text-uppercase" style="font-size:.72rem;letter-spacing:.08em">Server Linux (sorgente)</h6>
+            <ul class="list-unstyled mb-0" style="font-size:.88rem">
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Accesso SSH (porta 22 di default)</li>
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Utente con permessi sudo (per dump DB)</li>
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i><code>mysqldump</code> o <code>pg_dump</code> installati se usi DB</li>
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i><code>sshpass</code> sul <em>server Backup-All</em> (non sulla sorgente)</li>
+            </ul>
+          </div>
+          <div class="col-md-4">
+            <h6 class="text-muted text-uppercase" style="font-size:.72rem;letter-spacing:.08em">Server Windows (sorgente)</h6>
+            <ul class="list-unstyled mb-0" style="font-size:.88rem">
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>WinRM abilitato (porta 5985)</li>
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Utente Administrator (o con delega WinRM)</li>
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Share SMB sul QNAP configurata (per wbadmin)</li>
+              <li class="mb-1"><i class="bi bi-info-circle text-warning me-2"></i>WinRM: <code>winrm quickconfig</code> + <code>Set-Item WSMan:\localhost\Client\TrustedHosts *</code></li>
+            </ul>
+          </div>
+          <div class="col-md-4">
+            <h6 class="text-muted text-uppercase" style="font-size:.72rem;letter-spacing:.08em">VMware ESXi (sorgente/replica)</h6>
+            <ul class="list-unstyled mb-0" style="font-size:.88rem">
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>ESXi raggiungibile su porta 443</li>
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Utente con permesso datastore + VM power</li>
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i><code>ovftool</code> installato su Backup-All (per replica)</li>
+              <li class="mb-1"><i class="bi bi-info-circle text-warning me-2"></i>Modalità manutenzione NON attiva sulla VM</li>
+            </ul>
+          </div>
+        </div>
+        <hr class="my-3">
+        <div class="row g-4">
+          <div class="col-md-6">
+            <h6 class="text-muted text-uppercase" style="font-size:.72rem;letter-spacing:.08em">Destinazione QNAP / NAS</h6>
+            <ul class="list-unstyled mb-0" style="font-size:.88rem">
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>SSH abilitato (metodo rsync — consigliato)</li>
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Cartella di destinazione creata e con permessi scrittura</li>
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Spazio sufficiente per il numero di copie configurate</li>
+            </ul>
+          </div>
+          <div class="col-md-6">
+            <h6 class="text-muted text-uppercase" style="font-size:.72rem;letter-spacing:.08em">Rete</h6>
+            <ul class="list-unstyled mb-0" style="font-size:.88rem">
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Backup-All deve raggiungere le sorgenti e le destinazioni</li>
+              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Le sorgenti <em>non</em> devono raggiungere Backup-All</li>
+              <li class="mb-1"><i class="bi bi-info-circle text-warning me-2"></i>Firewall: apri le porte SSH/WinRM verso Backup-All</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Passo 1 -->
+    <div class="card mb-4" id="passo1">
+      <div class="card-header fw-semibold">
+        <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem;font-size:1.1rem">1</span>
+        Configurare le sorgenti
+        <a href="/wizard/server" class="btn btn-sm btn-outline-danger ms-3">
+          <i class="bi bi-arrow-right me-1"></i>Vai alle sorgenti
+        </a>
+      </div>
+      <div class="card-body">
+
+        <!-- Linux -->
+        <div class="mb-4">
+          <h6><span class="badge me-2" style="background:#166534;color:#bbf7d0"><i class="bi bi-terminal me-1"></i>Linux</span></h6>
+          <ol style="font-size:.88rem" class="text-muted mb-2">
+            <li class="mb-1">Seleziona il tab <strong>Linux</strong></li>
+            <li class="mb-1">Inserisci IP, porta SSH (default 22), utente e password</li>
+            <li class="mb-1">Se vuoi fare backup di un'applicazione, compila la sezione <em>Dati applicazione</em>: nome app, tipo DB, percorsi dei dati</li>
+            <li class="mb-1">Clicca <strong>Testa connessione</strong> — verifca SSH prima di salvare</li>
+            <li class="mb-1">Clicca <strong>Salva sorgente Linux</strong></li>
+          </ol>
+          <div class="alert-dark-info" style="font-size:.82rem">
+            <i class="bi bi-info-circle me-1"></i>
+            Se usi autenticazione con chiave SSH invece che password, lascia la password vuota e assicurati che la chiave pubblica del server Backup-All sia in <code>~/.ssh/authorized_keys</code> sulla sorgente.
+          </div>
+        </div>
+
+        <!-- Windows -->
+        <div class="mb-4">
+          <h6><span class="badge me-2" style="background:#1e3a5f;color:#bae6fd"><i class="bi bi-windows me-1"></i>Windows</span></h6>
+          <ol style="font-size:.88rem" class="text-muted mb-2">
+            <li class="mb-1">Seleziona il tab <strong>Windows</strong></li>
+            <li class="mb-1">Inserisci IP, porta WinRM (default 5985), utente Administrator e password</li>
+            <li class="mb-1">Per il backup bare-metal tramite <code>wbadmin</code>, configura una share SMB nella <strong>destinazione</strong> (campo "Share SMB")</li>
+            <li class="mb-1">Clicca <strong>Testa connessione</strong> — verifica che la porta WinRM risponda</li>
+            <li class="mb-1">Clicca <strong>Salva sorgente Windows</strong></li>
+          </ol>
+          <div class="alert-dark-info" style="font-size:.82rem">
+            <i class="bi bi-info-circle me-1"></i>
+            Per abilitare WinRM su Windows Server: apri PowerShell come amministratore ed esegui <code>winrm quickconfig -y</code>. Se il firewall blocca la porta 5985, aggiungi la regola: <code>netsh advfirewall firewall add rule name="WinRM" protocol=TCP dir=in localport=5985 action=allow</code>
+          </div>
+        </div>
+
+        <!-- VMware -->
+        <div>
+          <h6><span class="badge me-2" style="background:#4a2c00;color:#fde68a"><i class="bi bi-cloud-haze2 me-1"></i>VMware</span></h6>
+          <ol style="font-size:.88rem" class="text-muted mb-2">
+            <li class="mb-1">Prima di tutto, aggiungi un <strong>host ESXi</strong> dalla sezione in fondo al tab VMware: inserisci IP host, porta (443), utente e password ESXi</li>
+            <li class="mb-1">Seleziona l'host ESXi dal menu a tendina — la lista delle VM si carica automaticamente</li>
+            <li class="mb-1">Seleziona la VM da proteggere</li>
+            <li class="mb-1">Clicca <strong>Testa connessione ESXi</strong> — verifica accesso pyvmomi all'host</li>
+            <li class="mb-1">Clicca <strong>Salva sorgente VMware</strong></li>
+          </ol>
+          <div class="alert-dark-info" style="font-size:.82rem">
+            <i class="bi bi-info-circle me-1"></i>
+            Il backup VMware produce un file OVF/OVA sul NAS. La VM viene messa in snapshot temporaneamente durante l'esportazione. La VM rimane accesa durante il processo (il backup è consistente a livello applicativo, non a caldo).
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Passo 2 -->
+    <div class="card mb-4" id="passo2">
+      <div class="card-header fw-semibold">
+        <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem;font-size:1.1rem">2</span>
+        Configurare le destinazioni
+        <a href="/wizard/destination" class="btn btn-sm btn-outline-danger ms-3">
+          <i class="bi bi-arrow-right me-1"></i>Vai alle destinazioni
+        </a>
+      </div>
+      <div class="card-body">
+        <p class="text-muted mb-3" style="font-size:.88rem">Una destinazione è il NAS/QNAP dove vengono salvati i backup. Puoi avere più destinazioni e assegnare job diversi a ciascuna.</p>
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <div class="p-3 rounded h-100" style="background:rgba(74,222,128,.06);border:1px solid rgba(74,222,128,.2)">
+              <div class="fw-semibold mb-2"><i class="bi bi-arrow-left-right me-2 text-success"></i>rsync over SSH <span class="badge bg-success ms-1">Consigliato</span></div>
+              <ul class="text-muted mb-0" style="font-size:.83rem">
+                <li>Trasferisce solo le differenze (incrementale)</li>
+                <li>Crittografato (SSH)</li>
+                <li>Funziona con qualsiasi NAS con SSH abilitato</li>
+                <li>Porta di default: 22</li>
+              </ul>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="p-3 rounded h-100" style="background:rgba(96,165,250,.06);border:1px solid rgba(96,165,250,.2)">
+              <div class="fw-semibold mb-2"><i class="bi bi-cloud-upload me-2" style="color:#60a5fa"></i>API QTS</div>
+              <ul class="text-muted mb-0" style="font-size:.83rem">
+                <li>Usa le API native QNAP QTS</li>
+                <li>Porta di default: 8080</li>
+                <li>Richiede QNAP con QTS 5.x</li>
+                <li>Utile se SSH è disabilitato sul QNAP</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <ol style="font-size:.88rem" class="text-muted mb-3">
+          <li class="mb-1">Inserisci il nome e l'IP del NAS</li>
+          <li class="mb-1">Scegli il metodo (rsync SSH consigliato)</li>
+          <li class="mb-1">Inserisci utente e password del NAS</li>
+          <li class="mb-1">Indica il <strong>percorso base</strong> dove salvare i backup (es. <code>/share/Backup</code>). La cartella deve esistere sul NAS.</li>
+          <li class="mb-1">Se hai Windows con wbadmin, compila anche la <strong>share SMB</strong> (es. <code>Backup</code>)</li>
+          <li class="mb-1">Clicca <strong>Testa connessione</strong> per verificare subito</li>
+          <li class="mb-1">Clicca <strong>Salva destinazione</strong></li>
+        </ol>
+
+        <div class="alert-dark-info" style="font-size:.82rem">
+          <i class="bi bi-info-circle me-1"></i>
+          <strong>QNAP — abilitare SSH:</strong> Nel pannello di controllo QTS → <em>Applicazioni</em> → <em>SSH</em> → attiva il servizio. Per sicurezza, usa una porta non standard (es. 2222) e disabilita il login root se possibile.
+        </div>
+      </div>
+    </div>
+
+    <!-- Passo 3 -->
+    <div class="card mb-4" id="passo3">
+      <div class="card-header fw-semibold">
+        <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem;font-size:1.1rem">3</span>
+        Creare un job di backup
+        <a href="/wizard/job" class="btn btn-sm btn-outline-danger ms-3">
+          <i class="bi bi-arrow-right me-1"></i>Vai ai job
+        </a>
+      </div>
+      <div class="card-body">
+        <p class="text-muted mb-3" style="font-size:.88rem">Un job collega una sorgente a una destinazione e definisce quando e come eseguire il backup.</p>
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-4">
+            <div class="p-3 rounded h-100" style="border:1px solid var(--card-border)">
+              <div class="fw-semibold mb-1">Backup Completo</div>
+              <small class="text-muted">Linux: tutti i dati app + dump DB + snapshot VM (se VMware configurato).<br>Windows: wbadmin bare-metal + dati applicativi.</small>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="p-3 rounded h-100" style="border:1px solid var(--card-border)">
+              <div class="fw-semibold mb-1">Solo Dati Applicativi</div>
+              <small class="text-muted">Copia i percorsi configurati nella sorgente + dump del database. Più veloce del completo.</small>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="p-3 rounded h-100" style="border:1px solid var(--card-border)">
+              <div class="fw-semibold mb-1">Snapshot OVF (VMware)</div>
+              <small class="text-muted">Esporta la VM completa come file OVF sul NAS. Solo per sorgenti VMware.</small>
+            </div>
+          </div>
+        </div>
+
+        <h6 class="text-muted mb-2" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em">Pianificazione (cron)</h6>
+        <div class="table-responsive mb-3">
+          <table class="table table-dark table-sm" style="font-size:.83rem">
+            <thead><tr><th>Preset</th><th>Espressione cron</th><th>Descrizione</th></tr></thead>
+            <tbody>
+              <tr><td>Ogni notte</td><td><code>0 2 * * *</code></td><td>Alle 02:00, tutti i giorni</td></tr>
+              <tr><td>Settimanale</td><td><code>0 3 * * 0</code></td><td>Domenica alle 03:00</td></tr>
+              <tr><td>Solo feriali</td><td><code>0 1 * * 1-5</code></td><td>Lun–Ven alle 01:00</td></tr>
+              <tr><td>Ogni 6 ore</td><td><code>0 */6 * * *</code></td><td>Alle 00:00, 06:00, 12:00, 18:00</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h6 class="text-muted mb-2" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em">Retention</h6>
+        <p class="text-muted mb-0" style="font-size:.88rem">
+          Il campo <strong>Copie da mantenere</strong> indica quanti backup conservare. Quando viene superato il limite, il backup più vecchio viene eliminato automaticamente. Es.: con 7 copie e backup notturno, mantieni sempre l'ultima settimana.
+        </p>
+      </div>
+    </div>
+
+    <!-- Passo 4 -->
+    <div class="card mb-4" id="passo4">
+      <div class="card-header fw-semibold">
+        <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem;font-size:1.1rem">4</span>
+        Replica VM (warm standby)
+        <a href="/replication" class="btn btn-sm btn-outline-danger ms-3">
+          <i class="bi bi-arrow-right me-1"></i>Vai alla replica
+        </a>
+      </div>
+      <div class="card-body">
+        <p class="text-muted mb-3" style="font-size:.88rem">
+          La replica VM crea e mantiene una copia "standby" di una VM VMware su un host ESXi (lo stesso o uno diverso). In caso di guasto, la VM standby viene avviata e prende il posto della primaria.
+        </p>
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-6">
+            <div class="p-3 rounded h-100" style="border:1px solid var(--card-border)">
+              <div class="fw-semibold mb-2"><i class="bi bi-arrow-repeat me-2" style="color:var(--cri-red)"></i>Come funziona la sincronizzazione</div>
+              <ul class="text-muted mb-0" style="font-size:.83rem">
+                <li>Lo strumento <code>ovftool</code> copia la VM primaria sull'host di destinazione</li>
+                <li>La VM standby viene sovrascritta ad ogni sync (flag <code>--overwrite</code>)</li>
+                <li>La VM standby rimane <strong>spenta</strong> finché non avviene un failover</li>
+                <li>La sincronizzazione segue un orario cron configurabile</li>
+              </ul>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="p-3 rounded h-100" style="border:1px solid var(--card-border)">
+              <div class="fw-semibold mb-2"><i class="bi bi-heart-pulse me-2 text-danger"></i>Auto-failover (opzionale)</div>
+              <ul class="text-muted mb-0" style="font-size:.83rem">
+                <li>Il sistema controlla ogni 60 secondi se la VM primaria è accesa (pyvmomi)</li>
+                <li>Opzionalmente verifica anche la risposta di rete sull'IP configurato</li>
+                <li>Dopo N fallimenti consecutivi (configurabile), avvia automaticamente la standby</li>
+                <li>Il job viene messo in pausa dopo il failover per evitare sovrascritture</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        <h6 class="text-muted mb-2" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em">Procedura di configurazione</h6>
+        <ol style="font-size:.88rem" class="text-muted mb-3">
+          <li class="mb-1">Assicurati di avere almeno due host ESXi configurati (o uno se la standby è sullo stesso host)</li>
+          <li class="mb-1">Vai su <a href="/replication" style="color:#93c5fd">Replica VM</a> e clicca <strong>+ Nuova replica</strong></li>
+          <li class="mb-1">Seleziona l'host e la VM <strong>sorgente</strong> (la primaria)</li>
+          <li class="mb-1">Seleziona l'host <strong>destinazione</strong> e inserisci il nome che avrà la VM standby</li>
+          <li class="mb-1">Configura la pianificazione cron (es. ogni ora: <code>0 * * * *</code>)</li>
+          <li class="mb-1">Se vuoi l'auto-failover, attiva il toggle e configura intervallo e soglia di fallimenti</li>
+          <li class="mb-1">Clicca <strong>Salva</strong> — la prima sincronizzazione partirà al prossimo ciclo cron. Per avviarla subito, usa il pulsante <strong>Sync ora</strong></li>
+        </ol>
+
+        <div class="alert-dark-info" style="font-size:.82rem">
+          <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
+          <strong>Requisito:</strong> <code>ovftool</code> di VMware deve essere installato sul server Backup-All. Se non è presente, apparirà un avviso nella pagina Replica VM. Scarica ovftool dal sito VMware Developer e installalo con il bundle <code>.bundle</code> fornito.
+        </div>
+
+        <div class="alert-dark-info mt-2" style="font-size:.82rem;border-color:rgba(251,191,36,.3)">
+          <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
+          <strong>Failover manuale:</strong> prima di promuovere la VM standby, assicurati che la VM primaria sia effettivamente spenta o isolata. Avviare entrambe in contemporanea (split-brain) può causare conflitti di rete o corruzione dei dati.
+        </div>
+      </div>
+    </div>
+
+    <!-- Impostazioni -->
+    <div class="card mb-4" id="impostazioni">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-gear me-2" style="color:var(--cri-red)"></i>Impostazioni
+        <a href="/settings" class="btn btn-sm btn-outline-danger ms-3">
+          <i class="bi bi-arrow-right me-1"></i>Vai alle impostazioni
+        </a>
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <h6 class="text-muted text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.08em">Generali</h6>
+            <ul class="text-muted mb-0" style="font-size:.88rem">
+              <li class="mb-1"><strong>Nome organizzazione</strong> — appare nella topbar e nelle email di notifica</li>
+              <li class="mb-1"><strong>Cambio password</strong> — accessibile dal menu utente in alto a destra</li>
+            </ul>
+          </div>
+          <div class="col-md-6">
+            <h6 class="text-muted text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.08em">Notifiche Email (SMTP)</h6>
+            <ul class="text-muted mb-0" style="font-size:.88rem">
+              <li class="mb-1">Inserisci host SMTP, porta, utente e password</li>
+              <li class="mb-1">Attiva TLS se richiesto dal provider</li>
+              <li class="mb-1">Usa il pulsante <strong>Test SMTP</strong> per verificare la configurazione</li>
+              <li class="mb-1">Ogni job può avere un'email destinataria diversa</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FAQ -->
+    <div class="card mb-4" id="faq">
+      <div class="card-header fw-semibold"><i class="bi bi-question-circle me-2" style="color:var(--cri-red)"></i>Domande frequenti</div>
+      <div class="card-body p-0">
+        <div class="accordion accordion-flush" id="faqAccordion">
+
+          <div class="accordion-item bg-transparent border-secondary">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
+                Il test connessione passa ma il backup fallisce — perché?
+              </button>
+            </h2>
+            <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body text-muted" style="font-size:.88rem">
+                Il test verifica solo la connettività di base (SSH/WinRM/VMware API). Il backup può fallire per motivi diversi: permessi insufficienti sulla directory di destinazione, <code>mysqldump</code> non installato, disco pieno, timeout durante la copia. Controlla i log del job nella sezione <a href="/history" style="color:#93c5fd">Storico</a> per il messaggio di errore preciso.
+              </div>
+            </div>
+          </div>
+
+          <div class="accordion-item bg-transparent border-secondary">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
+                Come faccio a eseguire un backup manualmente senza aspettare lo scheduler?
+              </button>
+            </h2>
+            <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body text-muted" style="font-size:.88rem">
+                Vai su <a href="/jobs" style="color:#93c5fd">Job di Backup</a>, trova il job e clicca il pulsante <strong>Esegui ora</strong> (icona play). Il backup parte immediatamente in background. Puoi seguire l'avanzamento nella sezione <a href="/history" style="color:#93c5fd">Storico</a>.
+              </div>
+            </div>
+          </div>
+
+          <div class="accordion-item bg-transparent border-secondary">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
+                Come recupero un backup dal NAS?
+              </button>
+            </h2>
+            <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body text-muted" style="font-size:.88rem">
+                Il ripristino è manuale. I backup vengono salvati nel percorso base della destinazione, organizzati in sottocartelle per nome job e data. Per Linux/dati app: copia i file via rsync o SCP. Per Windows wbadmin: utilizza <code>wbadmin start recovery</code> o il tool grafico "Ripristino di sistema". Per VMware OVF: importa il file OVF dall'interfaccia ESXi o con ovftool.
+              </div>
+            </div>
+          </div>
+
+          <div class="accordion-item bg-transparent border-secondary">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq4">
+                Cosa succede se il backup è già in corso quando parte il prossimo?
+              </button>
+            </h2>
+            <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body text-muted" style="font-size:.88rem">
+                Lo scheduler APScheduler non avvia lo stesso job se è già in esecuzione (misfire policy). Il job successivo partirà normalmente al ciclo pianificato successivo.
+              </div>
+            </div>
+          </div>
+
+          <div class="accordion-item bg-transparent border-secondary">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq5">
+                La replica VM si è bloccata in stato "RUNNING" — cosa faccio?
+              </button>
+            </h2>
+            <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body text-muted" style="font-size:.88rem">
+                Potrebbe essere che ovftool sia ancora in esecuzione o sia crashato. Verifica su Linux con <code>ps aux | grep ovftool</code>. Se il processo non esiste più, il job è rimasto "bloccato" per un crash inatteso. Riavvia il servizio Backup-All — al riavvio i job in stato RUNNING vengono automaticamente chiusi. Poi lancia una nuova sync manuale.
+              </div>
+            </div>
+          </div>
+
+          <div class="accordion-item bg-transparent border-secondary">
+            <h2 class="accordion-header">
+              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq6">
+                Come aggiorno Backup-All a una nuova versione?
+              </button>
+            </h2>
+            <div id="faq6" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+              <div class="accordion-body text-muted" style="font-size:.88rem">
+                Usa lo script <code>update.sh</code> nella directory di installazione (<code>/opt/backup-all/update.sh</code>). Esegui <code>sudo bash update.sh</code>. Lo script scarica l'ultima versione dal branch configurato, aggiorna le dipendenze Python e riavvia il servizio. Il database e la configurazione vengono preservati.
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

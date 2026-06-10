@@ -48,6 +48,65 @@ def create_destination(data: DestinationCreate, db: Session = Depends(get_db)):
     return {"id": d.id, "name": d.name}
 
 
+class DestinationTestInline(BaseModel):
+    host: str
+    port: Optional[int] = 22
+    username: Optional[str] = None
+    password: Optional[str] = None
+    dest_type: str = "rsync"
+    base_path: Optional[str] = None
+
+
+@router.post("/test-inline")
+def test_destination_inline(data: DestinationTestInline):
+    import subprocess, os, shutil, socket
+    port = data.port or 22
+    password = data.password or ""
+
+    if data.dest_type == "qnap_api":
+        try:
+            with socket.create_connection((data.host, port), timeout=8):
+                pass
+            return {"ok": True, "message": f"Porta {data.host}:{port} raggiungibile ✓"}
+        except socket.timeout:
+            raise HTTPException(500, f"Timeout: {data.host}:{port} non risponde")
+        except ConnectionRefusedError:
+            raise HTTPException(500, f"Connessione rifiutata su {data.host}:{port}")
+        except OSError as e:
+            raise HTTPException(500, f"Host {data.host} non raggiungibile: {e}")
+
+    # rsync over SSH
+    has_sshpass = shutil.which("sshpass") is not None
+    if password and not has_sshpass:
+        raise HTTPException(500, "sshpass non installato sul server — esegui: sudo apt install sshpass")
+    env = os.environ.copy()
+    if password and has_sshpass:
+        env["SSHPASS"] = password
+        cmd = ["sshpass", "-e", "ssh"]
+    else:
+        cmd = ["ssh"]
+    cmd += ["-p", str(port), "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=no",
+            f"{data.username}@{data.host}", "echo OK"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=15)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(500, f"Timeout: {data.host}:{port} non risponde entro 15 secondi")
+    except FileNotFoundError as e:
+        raise HTTPException(500, f"Comando non trovato: {e}")
+    if result.returncode == 0 and "OK" in result.stdout:
+        return {"ok": True, "message": f"Connessione SSH a {data.host}:{port} riuscita ✓"}
+    stderr = result.stderr.strip()
+    if "Permission denied" in stderr or "Authentication failed" in stderr:
+        raise HTTPException(500, f"Credenziali errate per {data.username}@{data.host}")
+    elif "Connection refused" in stderr:
+        raise HTTPException(500, f"Connessione rifiutata — SSH abilitato sul NAS?")
+    elif "No route to host" in stderr or "Network unreachable" in stderr:
+        raise HTTPException(500, f"Host {data.host} non raggiungibile — controlla IP e rete")
+    elif "Connection timed out" in stderr:
+        raise HTTPException(500, f"Timeout connessione a {data.host}:{port}")
+    raise HTTPException(500, f"SSH error (rc={result.returncode}): {stderr[:300] or 'nessun output'}")
+
+
 @router.post("/{dest_id}/test")
 def test_destination(dest_id: int, db: Session = Depends(get_db)):
     import subprocess, os, shutil, logging

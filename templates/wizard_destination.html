@@ -117,7 +117,8 @@
               <input class="form-control" id="f-retention" value="30" type="number" min="1">
             </div>
 
-            <div class="d-flex gap-3 mt-4 pt-3 border-top">
+            <div id="test-result-new" class="mt-3" style="display:none"></div>
+            <div class="d-flex gap-3 mt-3 pt-3 border-top">
               <button type="button" class="btn btn-outline-secondary" onclick="testConnNew()">
                 <i class="bi bi-wifi"></i> Testa connessione
               </button>
@@ -328,16 +329,26 @@ async function deleteDest(id) {
 }
 
 async function testConnNew() {
-  const btn = event.target;
+  const btn = event.target.closest('button');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Test…';
-  const payload = buildNewPayload();
-  if (!payload) { btn.disabled=false; btn.innerHTML='<i class="bi bi-wifi"></i> Testa connessione'; return; }
+  const host = document.getElementById('f-host').value;
+  if (!host) { showToast('Inserisci prima l\'indirizzo IP', 'warning'); btn.disabled=false; btn.innerHTML='<i class="bi bi-wifi"></i> Testa connessione'; return; }
+  const payload = {
+    host,
+    dest_type: selectedDest,
+    port: selectedDest === 'rsync' ? +document.getElementById('f-port-rsync').value : +document.getElementById('f-port-api').value,
+    username: selectedDest === 'rsync' ? document.getElementById('f-user-rsync').value : document.getElementById('f-user-api').value,
+    password: selectedDest === 'rsync' ? document.getElementById('f-pass-rsync').value : document.getElementById('f-pass-api').value,
+  };
+  const resDiv = document.getElementById('test-result-new');
+  resDiv.style.display = 'none';
   try {
-    const res = await api('POST', '/api/destinations', payload);
-    const test = await api('POST', `/api/destinations/${res.id}/test`);
-    showToast(test.message, 'success');
-  } catch(e) { showToast(e.message, 'danger'); }
+    const r = await api('POST', '/api/destinations/test-inline', payload);
+    resDiv.className = 'alert alert-success py-2'; resDiv.textContent = r.message; resDiv.style.display = '';
+  } catch(e) {
+    resDiv.className = 'alert alert-danger py-2'; resDiv.textContent = e.message; resDiv.style.display = '';
+  }
   btn.disabled = false;
   btn.innerHTML = '<i class="bi bi-wifi"></i> Testa connessione';
 }

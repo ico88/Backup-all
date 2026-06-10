@@ -218,8 +218,8 @@
   </a>
 
   <div style="margin-top:auto; padding-top:1rem; border-top:1px solid var(--card-border); margin-top:2rem">
-    <a href="/docs" class="nav-link" style="font-size:.78rem">
-      <i class="bi bi-code-square"></i> API Docs
+    <a href="/docs" class="nav-link {% if 'docs' in request.url.path %}active{% endif %}" style="font-size:.78rem">
+      <i class="bi bi-book"></i> Guida
     </a>
   </div>
 </nav>

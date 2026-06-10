@@ -145,6 +145,85 @@ def update_server(server_id: int, data: ServerCreate, db: Session = Depends(get_
     return {"ok": True}
 
 
+class ServerTestInline(BaseModel):
+    server_type: ServerType
+    ip_address: str
+    ssh_port: int = 22
+    winrm_port: int = 5985
+    username: Optional[str] = None
+    password: Optional[str] = None
+    vmware_host_id: Optional[int] = None
+    vm_name: Optional[str] = None
+
+
+@router.post("/test-inline")
+def test_server_inline(data: ServerTestInline, db: Session = Depends(get_db)):
+    import subprocess, os, shutil, socket
+    if data.server_type == ServerType.VMWARE:
+        if not data.vmware_host_id:
+            raise HTTPException(400, "Seleziona un host ESXi prima di testare")
+        host = db.get(VMwareHost, data.vmware_host_id)
+        if not host:
+            raise HTTPException(404, "Host VMware non trovato")
+        try:
+            from app.backup.vmware import list_vms
+            vms = list_vms(host)
+            vm_names = [v["name"] for v in vms]
+            if data.vm_name and data.vm_name not in vm_names:
+                raise HTTPException(500, f"VM '{data.vm_name}' non trovata su {host.host}. Disponibili: {', '.join(vm_names[:5])}")
+            return {"ok": True, "message": f"Connessione a ESXi {host.host} riuscita — {len(vms)} VM trovate ✓"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Errore connessione ESXi {host.host}: {e}")
+
+    if data.server_type == ServerType.WINDOWS:
+        port = data.winrm_port or 5985
+        try:
+            with socket.create_connection((data.ip_address, port), timeout=8):
+                pass
+            return {"ok": True, "message": f"Porta WinRM {data.ip_address}:{port} raggiungibile ✓"}
+        except socket.timeout:
+            raise HTTPException(500, f"Timeout: {data.ip_address}:{port} non risponde")
+        except ConnectionRefusedError:
+            raise HTTPException(500, f"Connessione rifiutata su {data.ip_address}:{port} — WinRM abilitato?")
+        except OSError as e:
+            raise HTTPException(500, f"Host {data.ip_address} non raggiungibile: {e}")
+
+    # Linux SSH
+    port = data.ssh_port or 22
+    password = data.password or ""
+    has_sshpass = shutil.which("sshpass") is not None
+    if password and not has_sshpass:
+        raise HTTPException(500, "sshpass non installato sul server — esegui: sudo apt install sshpass")
+    env = os.environ.copy()
+    if password and has_sshpass:
+        env["SSHPASS"] = password
+        cmd = ["sshpass", "-e", "ssh"]
+    else:
+        cmd = ["ssh"]
+    cmd += ["-p", str(port), "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=no",
+            f"{data.username}@{data.ip_address}", "echo OK"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=15)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(500, f"Timeout: {data.ip_address}:{port} non risponde entro 15 secondi")
+    except FileNotFoundError as e:
+        raise HTTPException(500, f"Comando non trovato: {e}")
+    if result.returncode == 0 and "OK" in result.stdout:
+        return {"ok": True, "message": f"Connessione SSH a {data.ip_address}:{port} riuscita ✓"}
+    stderr = result.stderr.strip()
+    if "Permission denied" in stderr or "Authentication failed" in stderr:
+        raise HTTPException(500, f"Credenziali errate per {data.username}@{data.ip_address}")
+    elif "Connection refused" in stderr:
+        raise HTTPException(500, f"Connessione rifiutata su {data.ip_address}:{port}")
+    elif "No route to host" in stderr or "Network unreachable" in stderr:
+        raise HTTPException(500, f"Host {data.ip_address} non raggiungibile")
+    elif "Connection timed out" in stderr:
+        raise HTTPException(500, f"Timeout connessione a {data.ip_address}:{port}")
+    raise HTTPException(500, f"SSH error (rc={result.returncode}): {stderr[:300] or 'nessun output'}")
+
+
 @router.post("/{server_id}/test")
 def test_server(server_id: int, db: Session = Depends(get_db)):
     import subprocess, os, shutil, socket, logging
