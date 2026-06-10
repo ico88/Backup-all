@@ -153,6 +153,7 @@ def backup_system_wbadmin(server, dest_cfg, timestamp: str, log_fn=None) -> None
     task_id = uuid.uuid4().hex[:12]
     task_name = f"BackupAll_wbadmin_{task_id}"
     script_path = f"C:\\Windows\\Temp\\{task_name}.ps1"
+    script_b64_path = f"C:\\Windows\\Temp\\{task_name}.b64"
     log_path = f"C:\\Windows\\Temp\\{task_name}.log"
     server_password = decrypt(server.password_enc)
 
@@ -216,14 +217,43 @@ try {{
         log_fn(f"Avvio backup sistema Windows verso {backup_target} ...")
 
     session = _get_session(server)
+    init_upload_cmd = f"""
+$ErrorActionPreference = 'Stop'
+Remove-Item {_ps_quote(script_b64_path)} -Force -ErrorAction SilentlyContinue
+Remove-Item {_ps_quote(script_path)} -Force -ErrorAction SilentlyContinue
+New-Item -ItemType File -Path {_ps_quote(script_b64_path)} -Force | Out-Null
+"""
+    init_result = session.run_ps(init_upload_cmd)
+    if init_result.status_code != 0:
+        raise RuntimeError(
+            "wbadmin fallito: preparazione script remoto fallita: "
+            + init_result.std_err.decode(errors="replace")
+        )
+
+    for offset in range(0, len(script_b64), 3000):
+        chunk = script_b64[offset:offset + 3000]
+        append_cmd = f"""
+$ErrorActionPreference = 'Stop'
+Add-Content -Path {_ps_quote(script_b64_path)} -Value {_ps_quote(chunk)} -NoNewline
+"""
+        append_result = session.run_ps(append_cmd)
+        if append_result.status_code != 0:
+            raise RuntimeError(
+                "wbadmin fallito: caricamento script remoto fallito: "
+                + append_result.std_err.decode(errors="replace")
+            )
+
     setup_cmd = f"""
 $ErrorActionPreference = 'Stop'
 $scriptPath = {_ps_quote(script_path)}
+$scriptB64Path = {_ps_quote(script_b64_path)}
 $taskName = {_ps_quote(task_name)}
 $taskUser = {_ps_quote(server.username)}
 $taskPassword = {_ps_quote(server_password)}
-$scriptBytes = [Convert]::FromBase64String({_ps_quote(script_b64)})
+$scriptBytes = [Convert]::FromBase64String((Get-Content $scriptB64Path -Raw))
 [System.IO.File]::WriteAllBytes($scriptPath, $scriptBytes)
+$scriptText = Get-Content $scriptPath -Raw
+Set-Content -Path $scriptPath -Value $scriptText -Encoding UTF8
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 24) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
@@ -272,6 +302,7 @@ Write-Output "LOG_END"
     cleanup_cmd = f"""
 Unregister-ScheduledTask -TaskName {_ps_quote(task_name)} -Confirm:$false -ErrorAction SilentlyContinue
 Remove-Item {_ps_quote(script_path)} -Force -ErrorAction SilentlyContinue
+Remove-Item {_ps_quote(script_b64_path)} -Force -ErrorAction SilentlyContinue
 Remove-Item {_ps_quote(log_path)} -Force -ErrorAction SilentlyContinue
 """
     session.run_ps(cleanup_cmd)
