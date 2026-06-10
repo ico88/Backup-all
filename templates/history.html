@@ -78,12 +78,27 @@ async function loadRuns() {
         ${r.error_message?`<div style="font-size:.7rem;color:var(--danger);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.error_message}">${r.error_message.substring(0,50)}…</div>`:''}
       </td>
       <td style="font-size:.78rem;color:var(--text-muted)">${r.triggered_by==='manual'?'<i class="bi bi-hand-index me-1"></i>Manuale':'<i class="bi bi-clock me-1"></i>Scheduler'}</td>
-      <td>
+      <td class="d-flex gap-1">
         <a href="/logs/${r.id}" class="btn btn-icon btn-outline-secondary" title="Vedi log">
           <i class="bi bi-file-text"></i>
         </a>
+        ${r.status==='failed'?`<button class="btn btn-icon btn-outline-warning" title="Riprova backup" onclick="retryJob(${r.job_id},this)"><i class="bi bi-arrow-clockwise"></i></button>`:''}
       </td>
     </tr>`).join('');
+}
+
+async function retryJob(jobId, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  try {
+    await api('POST', `/api/jobs/${jobId}/run`);
+    showToast('Backup riavviato — controlla lo storico tra qualche istante', 'success');
+    setTimeout(loadRuns, 3000);
+  } catch(e) {
+    showToast('Errore: ' + e.message, 'danger');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+  }
 }
 
 loadJobFilter().then(()=>loadRuns());

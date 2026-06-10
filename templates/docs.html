@@ -152,12 +152,33 @@
               </div>
               <ul class="text-muted mb-3" style="font-size:.82rem;padding-left:1rem">
                 <li class="mb-1">Connessione via <strong>API vSphere</strong> (porta 443)</li>
-                <li class="mb-1">Snapshot OVF della VM intera</li>
-                <li class="mb-1">Aggiungi prima l'host ESXi</li>
+                <li class="mb-1">Streaming diretto ESXi → NAS (zero disco locale)</li>
+                <li class="mb-1">Aggiungi prima l'host ESXi dalla tab dedicata</li>
+                <li class="mb-1">Free License supportata (senza snapshot API)</li>
               </ul>
               <div class="tip-box blue" style="font-size:.78rem">
                 <i class="bi bi-info-circle"></i>
                 <div>La lista VM si carica automaticamente dalle API ESXi dopo aver aggiunto l'host.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-3">
+                <div style="width:32px;height:32px;border-radius:7px;background:rgba(139,92,246,.15);color:#c4b5fd;display:flex;align-items:center;justify-content:center"><i class="bi bi-cpu"></i></div>
+                <span class="fw-semibold">XCP-ng</span>
+              </div>
+              <ul class="text-muted mb-3" style="font-size:.82rem;padding-left:1rem">
+                <li class="mb-1">Connessione via <strong>XAPI</strong> (XML-RPC, porta 443)</li>
+                <li class="mb-1">Esporta la VM in formato <strong>XVA</strong> con compressione zstd</li>
+                <li class="mb-1">Streaming diretto XCP-ng → NAS (zero disco locale)</li>
+                <li class="mb-1">Aggiungi prima l'host XCP-ng dalla tab dedicata</li>
+              </ul>
+              <div class="tip-box blue" style="font-size:.78rem">
+                <i class="bi bi-info-circle"></i>
+                <div>Per ripristinare un XVA: <code>xe vm-import filename=backup.xva</code> sull'host XCP-ng.</div>
               </div>
             </div>
           </div>
@@ -554,10 +575,29 @@
         </button>
         <div id="q3" class="accordion-collapse collapse">
           <div class="accordion-body" style="font-size:.83rem;color:var(--text-muted)">
-            Il ripristino è manuale. I file sono nel percorso base della destinazione, in sottocartelle <code>[nome-job]/[data]/</code>.<br>
+            Il ripristino è manuale. I file sono nel percorso base della destinazione, in sottocartelle <code>[nome-server]/[data]/</code>.<br>
             <strong style="color:var(--text-primary)">Linux:</strong> copia con rsync o SCP.<br>
             <strong style="color:var(--text-primary)">Windows:</strong> usa <code>wbadmin start recovery</code> o la GUI "Backup di Windows Server".<br>
-            <strong style="color:var(--text-primary)">VMware OVF:</strong> importa il file dal pannello ESXi (Actions → Deploy OVF Template).
+            <strong style="color:var(--text-primary)">VMware OVF:</strong> importa il file dal pannello ESXi (Actions → Deploy OVF Template).<br>
+            <strong style="color:var(--text-primary)">XCP-ng XVA:</strong> <code>xe vm-import filename=backup.xva</code> sull'host XCP-ng.
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item" style="background:transparent;border-color:var(--card-border)">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#q3b"
+          style="background:transparent;color:var(--text-primary);font-size:.86rem;box-shadow:none">
+          <i class="bi bi-arrow-repeat me-2" style="color:#fb923c"></i>Un backup è fallito — ricomincia da capo o riprende?
+        </button>
+        <div id="q3b" class="accordion-collapse collapse">
+          <div class="accordion-body" style="font-size:.83rem;color:var(--text-muted)">
+            Dipende dal tipo di backup:
+            <ul class="mt-2 mb-2" style="padding-left:1.2rem">
+              <li class="mb-2"><strong style="color:var(--text-primary)">Linux / Windows (rsync):</strong> rsync è incrementale — al secondo tentativo trasferisce solo i file mancanti o modificati. Di fatto riprende da dove si era fermato.</li>
+              <li class="mb-2"><strong style="color:var(--text-primary)">VMware ESXi / XCP-ng (streaming):</strong> il backup ricomincia da capo. Lo streaming diretto non prevede resume parziale — ma le VM di solito si completano in un'unica sessione.</li>
+              <li><strong style="color:var(--text-primary)">Windows bare-metal (wbadmin):</strong> wbadmin gestisce internamente l'incrementale se la destinazione esiste già.</li>
+            </ul>
+            Per riprovare manualmente un backup fallito vai su <a href="/history" style="color:#93c5fd">Storico</a> e clicca il pulsante <strong style="color:#fbbf24"><i class="bi bi-arrow-clockwise"></i> Riprova</strong> accanto al run fallito.
           </div>
         </div>
       </div>
@@ -612,6 +652,7 @@ const typeBadge = t => ({
   linux:   '<span class="badge" style="background:#166534;color:#bbf7d0;font-size:.7rem"><i class="bi bi-terminal me-1"></i>Linux</span>',
   windows: '<span class="badge" style="background:#1e3a5f;color:#bae6fd;font-size:.7rem"><i class="bi bi-windows me-1"></i>Windows</span>',
   vmware:  '<span class="badge" style="background:#4a2c00;color:#fde68a;font-size:.7rem"><i class="bi bi-cloud-haze2 me-1"></i>VMware</span>',
+  xcpng:   '<span class="badge" style="background:#2d1b69;color:#c4b5fd;font-size:.7rem"><i class="bi bi-cpu me-1"></i>XCP-ng</span>',
 }[t] || t);
 
 const jobStatusBadge = s => ({
@@ -676,7 +717,7 @@ async function refreshStatus() {
         <tr>
           <td class="fw-semibold">${s.name}</td>
           <td>${typeBadge(s.server_type)}</td>
-          <td><small class="text-muted">${s.server_type === 'vmware' ? (s.vmware_host_name||'—')+' / '+(s.vm_name||'—') : s.ip_address}</small></td>
+          <td><small class="text-muted">${s.server_type === 'vmware' ? (s.vmware_host_name||'—')+' / '+(s.vm_name||'—') : s.server_type === 'xcpng' ? (s.xcp_host_name||'—')+' / '+(s.vm_name||'—') : s.ip_address}</small></td>
           <td><small class="text-muted">${s.app_name || '—'}</small></td>
           <td><a href="/wizard/server" class="btn btn-sm btn-outline-secondary py-0 px-2">Modifica</a></td>
         </tr>`).join('');
