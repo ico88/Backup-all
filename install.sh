@@ -104,6 +104,29 @@ for pkg in "${PKGS[@]}"; do
     fi
 done
 
+# ovftool
+OVFTOOL_BUNDLE="VMware-ovftool-4.6.3-23199252-lin.x86_64.bundle"
+OVFTOOL_URL="https://developer.vmware.com/web/tool/ovf-tool"
+
+if command -v ovftool &>/dev/null || [ -f "/usr/lib/vmware-ovftool/ovftool" ]; then
+    ok "ovftool già installato"
+else
+    warn "ovftool non trovato — necessario per la replica VM ESXi→ESXi"
+    info "Scarica ovftool da: ${OVFTOOL_URL}"
+    info "Oppure esegui dopo l'installazione: bash ${INSTALL_DIR}/install_ovftool.sh"
+    # Crea script helper per installazione successiva
+    mkdir -p "${INSTALL_DIR}"
+    cat > "${INSTALL_DIR}/install_ovftool.sh" << 'OVFTOOL_EOF'
+#!/usr/bin/env bash
+echo "Scarica ovftool dal sito VMware:"
+echo "  https://developer.vmware.com/web/tool/ovf-tool"
+echo "Poi esegui:"
+echo "  chmod +x VMware-ovftool-*.bundle"
+echo "  sudo ./VMware-ovftool-*.bundle --eulas-agreed"
+OVFTOOL_EOF
+    chmod +x "${INSTALL_DIR}/install_ovftool.sh"
+fi
+
 # Verifica versione Python
 PY_VER=$(python3 -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 PY_MAJOR=$(echo "$PY_VER" | cut -d. -f1)

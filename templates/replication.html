@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+{% block title %}Replica VM{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="page-title"><i class="bi bi-arrow-repeat me-2" style="color:var(--cri-red)"></i>Replica VM — Warm Standby</div>
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newReplModal">
+    <i class="bi bi-plus-lg me-1"></i>Nuova replica
+  </button>
+</div>
+
+<!-- Alert ovftool -->
+<div id="ovftool-warn" class="alert alert-warning d-none mb-4" style="font-size:.84rem">
+  <i class="bi bi-exclamation-triangle-fill me-2"></i>
+  <strong>ovftool non installato.</strong> La replica VM richiede VMware ovftool.
+  Scaricalo da <a href="https://developer.vmware.com/web/tool/ovf-tool" target="_blank">developer.vmware.com</a>
+  e installalo con: <code>chmod +x VMware-ovftool-*.bundle &amp;&amp; sudo ./VMware-ovftool-*.bundle --eulas-agreed</code>
+</div>
+
+<!-- Lista job di replica -->
+<div id="repl-list" class="row g-4"></div>
+<p id="no-repl-msg" class="text-muted text-center py-5" style="display:none">
+  Nessuna replica configurata. Clicca "Nuova replica" per iniziare.
+</p>
+
+<!-- Modal nuova replica -->
+<div class="modal fade" id="newReplModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Nuova replica VM</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Nome</label>
+            <input class="form-control" id="nr-name" placeholder="Es. Replica ERP — DR">
+          </div>
+
+          <div class="col-12"><hr class="border-secondary my-1"><small class="text-muted text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.08em">VM Primaria (sorgente)</small></div>
+          <div class="col-md-6">
+            <label class="form-label">Host ESXi sorgente</label>
+            <select class="form-select" id="nr-src-host" onchange="loadSrcVMs()">
+              <option value="">— seleziona —</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Virtual Machine primaria</label>
+            <select class="form-select" id="nr-src-vm">
+              <option value="">— seleziona host prima —</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">IP VM primaria <span class="text-muted fw-normal">(per heartbeat)</span></label>
+            <input class="form-control" id="nr-src-ip" placeholder="192.168.1.x (opzionale)">
+          </div>
+
+          <div class="col-12"><hr class="border-secondary my-1"><small class="text-muted text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.08em">VM Standby (destinazione)</small></div>
+          <div class="col-md-6">
+            <label class="form-label">Host ESXi destinazione</label>
+            <select class="form-select" id="nr-dst-host">
+              <option value="">— seleziona —</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Nome VM standby <span class="text-muted fw-normal">(sarà creata/sovrascritta)</span></label>
+            <input class="form-control" id="nr-dst-vm" placeholder="vm-erp-standby">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Datastore destinazione <span class="text-muted fw-normal">(opzionale)</span></label>
+            <input class="form-control" id="nr-datastore" placeholder="datastore1">
+          </div>
+
+          <div class="col-12"><hr class="border-secondary my-1"><small class="text-muted text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.08em">Pianificazione</small></div>
+          <div class="col-12">
+            <label class="form-label">Frequenza replica</label>
+            <div class="d-flex flex-wrap gap-2 mb-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setCron('0 2 * * *')">Ogni notte (02:00)</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setCron('0 */6 * * *')">Ogni 6 ore</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setCron('0 */2 * * *')">Ogni 2 ore</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setCron('0 * * * *')">Ogni ora</button>
+            </div>
+            <input class="form-control font-monospace" id="nr-cron" value="0 2 * * *" placeholder="cron expression">
+          </div>
+
+          <div class="col-12"><hr class="border-secondary my-1"><small class="text-muted text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.08em">Failover automatico</small></div>
+          <div class="col-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="nr-auto-failover" onchange="toggleHeartbeat()">
+              <label class="form-check-label" for="nr-auto-failover">
+                Abilita failover automatico (heartbeat monitoring)
+              </label>
+            </div>
+            <small class="text-muted">Se abilitato, il sistema controlla ogni N secondi che la VM primaria sia attiva. Dopo K fallimenti consecutivi, promuove automaticamente la standby.</small>
+          </div>
+          <div id="heartbeat-fields" style="display:none" class="col-12">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label">Intervallo controllo (sec)</label>
+                <input class="form-control" id="nr-hb-interval" type="number" value="60" min="10">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Fallimenti prima del failover</label>
+                <input class="form-control" id="nr-hb-failures" type="number" value="3" min="1">
+                <div class="form-text">Tempo failover = intervallo × fallimenti</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button class="btn btn-primary" onclick="createReplication()">
+          <i class="bi bi-check-lg me-1"></i>Crea replica
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal conferma failover -->
+<div class="modal fade" id="promoteModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark text-light border-danger">
+      <div class="modal-header border-danger">
+        <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i>Conferma Failover</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p id="promote-text"></p>
+        <div class="alert alert-danger py-2" style="font-size:.82rem">
+          <strong>Attenzione:</strong> questa operazione avvierà la VM standby.
+          Assicurati che la VM primaria sia spenta o isolata prima di procedere
+          per evitare conflitti (split-brain).
+        </div>
+      </div>
+      <div class="modal-footer border-danger">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button class="btn btn-danger" id="confirm-promote-btn">
+          <i class="bi bi-lightning-fill me-1"></i>Promuovi VM standby
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let vmwareHosts = [];
+let replJobs = [];
+let promoteJobId = null;
+
+// ── Init ──────────────────────────────────────────────
+async function init() {
+  await loadHosts();
+  await loadJobs();
+  checkOvftool();
+  setInterval(loadJobs, 15000);  // refresh ogni 15s
+}
+
+async function checkOvftool() {
+  try {
+    const r = await api('GET', '/api/replication/ovftool-check');
+    if (!r.available) document.getElementById('ovftool-warn').classList.remove('d-none');
+  } catch(e) {}
+}
+
+// ── Hosts ─────────────────────────────────────────────
+async function loadHosts() {
+  try {
+    vmwareHosts = await api('GET', '/api/servers/vmware-hosts');
+    ['nr-src-host', 'nr-dst-host'].forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">— seleziona —</option>';
+      vmwareHosts.forEach(h => {
+        const o = document.createElement('option');
+        o.value = h.id; o.textContent = `${h.name} (${h.host})`;
+        sel.appendChild(o);
+      });
+      if (cur) sel.value = cur;
+    });
+  } catch(e) {}
+}
+
+async function loadSrcVMs() {
+  const hostId = document.getElementById('nr-src-host').value;
+  const vmSel = document.getElementById('nr-src-vm');
+  vmSel.innerHTML = '<option value="">Caricamento VM...</option>';
+  if (!hostId) { vmSel.innerHTML = '<option value="">— seleziona host prima —</option>'; return; }
+  try {
+    const vms = await api('GET', `/api/servers/vmware-hosts/${hostId}/vms`);
+    vmSel.innerHTML = '<option value="">— seleziona VM —</option>';
+    vms.forEach(v => {
+      const o = document.createElement('option');
+      o.value = v.name;
+      o.textContent = `${v.name}  ${v.power_state === 'poweredOn' ? '▶' : '⏹'}`;
+      vmSel.appendChild(o);
+    });
+  } catch(e) {
+    vmSel.innerHTML = '<option value="">Errore connessione ESXi</option>';
+    showToast('Errore connessione ESXi: ' + e.message, 'danger');
+  }
+}
+
+function setCron(val) { document.getElementById('nr-cron').value = val; }
+function toggleHeartbeat() {
+  document.getElementById('heartbeat-fields').style.display =
+    document.getElementById('nr-auto-failover').checked ? '' : 'none';
+}
+
+// ── Load jobs ─────────────────────────────────────────
+async function loadJobs() {
+  try {
+    replJobs = await api('GET', '/api/replication');
+    const container = document.getElementById('repl-list');
+    document.getElementById('no-repl-msg').style.display = replJobs.length ? 'none' : '';
+    container.innerHTML = replJobs.map(renderCard).join('');
+  } catch(e) {}
+}
+
+function syncStatusBadge(s) {
+  const map = {
+    never:   '<span class="badge-status bs-disabled">Mai sincronizzato</span>',
+    running: '<span class="badge-status bs-running">Sync in corso…</span>',
+    success: '<span class="badge-status bs-success">Sync OK</span>',
+    failed:  '<span class="badge-status bs-failed">Sync fallito</span>',
+  };
+  return map[s] || s;
+}
+
+function renderCard(j) {
+  const isFailover = j.failover_state === 'failover';
+  const isPaused = j.status === 'paused';
+  const lastSync = j.last_sync_at
+    ? new Date(j.last_sync_at).toLocaleString('it-IT') + (j.last_sync_duration_sec ? ` (${Math.round(j.last_sync_duration_sec/60)} min)` : '')
+    : '—';
+  const lastHb = j.last_heartbeat_at
+    ? new Date(j.last_heartbeat_at).toLocaleTimeString('it-IT')
+    : '—';
+
+  const failoverBanner = isFailover ? `
+    <div class="alert alert-danger py-2 mb-3" style="font-size:.82rem">
+      <i class="bi bi-lightning-fill me-1"></i>
+      <strong>FAILOVER ATTIVO</strong> — VM standby "${j.target_vm_name}" è ora la primaria.
+      Ripristina la VM originale e resetta il job per tornare alla normalità.
+    </div>` : '';
+
+  const heartbeatInfo = j.auto_failover ? `
+    <div class="d-flex align-items-center gap-2 mt-2" style="font-size:.78rem;color:var(--text-muted)">
+      <i class="bi bi-heart-pulse" style="color:${j.heartbeat_failures > 0 ? 'var(--danger)' : 'var(--success)'}"></i>
+      Heartbeat: ultimo controllo ${lastHb}
+      ${j.heartbeat_failures > 0
+        ? `<span class="badge bg-danger">${j.heartbeat_failures}/${j.heartbeat_max_failures} fallimenti</span>`
+        : '<span style="color:var(--success)">✓ Online</span>'}
+    </div>` : '';
+
+  return `
+  <div class="col-lg-6">
+    <div class="card h-100 ${isFailover ? 'border-danger' : ''}">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-arrow-repeat" style="color:var(--cri-red)"></i>
+          <span>${j.name}</span>
+          ${isPaused ? '<span class="badge-status bs-paused ms-1">In pausa</span>' : ''}
+          ${isFailover ? '<span class="badge-status bs-failed ms-1">FAILOVER</span>' : ''}
+        </div>
+        <div class="d-flex gap-1">
+          <button class="btn btn-icon btn-outline-secondary" title="${isPaused ? 'Riprendi' : 'Pausa'}"
+            onclick="${isPaused ? `resumeJob(${j.id})` : `pauseJob(${j.id})`}">
+            <i class="bi bi-${isPaused ? 'play-fill' : 'pause-fill'}"></i>
+          </button>
+          <button class="btn btn-icon btn-outline-danger" title="Elimina" onclick="deleteJob(${j.id})">
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        ${failoverBanner}
+
+        <!-- Topologia -->
+        <div class="d-flex align-items-center gap-2 mb-3 p-3 rounded" style="background:#0d0f14;font-size:.84rem">
+          <div class="text-center">
+            <div class="fw-semibold" style="color:#bae6fd">${j.source_vm_name}</div>
+            <small class="text-muted">${j.source_host_name || j.source_host_ip}</small>
+            <div><span class="badge" style="background:#166534;color:#bbf7d0;font-size:.65rem">PRIMARIA</span></div>
+          </div>
+          <div class="flex-grow-1 text-center">
+            <div style="border-top:2px dashed #3a3f4b;position:relative;margin:.5rem 0">
+              <small style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);background:#0d0f14;padding:0 6px;color:var(--text-muted)">
+                ${j.cron_expression}
+              </small>
+            </div>
+            <small class="text-muted">replica</small>
+          </div>
+          <div class="text-center">
+            <div class="fw-semibold" style="color:#fde68a">${j.target_vm_name}</div>
+            <small class="text-muted">${j.target_host_name || j.target_host_ip}</small>
+            <div><span class="badge" style="background:#78350f;color:#fde68a;font-size:.65rem">STANDBY</span></div>
+          </div>
+        </div>
+
+        <!-- Stato sync -->
+        <div class="d-flex align-items-center justify-content-between mb-2" style="font-size:.82rem">
+          <span class="text-muted">Ultimo sync:</span>
+          <span>${lastSync}</span>
+        </div>
+        <div class="d-flex align-items-center justify-content-between" style="font-size:.82rem">
+          <span class="text-muted">Stato:</span>
+          ${syncStatusBadge(j.last_sync_status)}
+        </div>
+        ${heartbeatInfo}
+      </div>
+      <div class="card-footer d-flex gap-2">
+        <button class="btn btn-sm btn-outline-secondary" onclick="syncNow(${j.id})" ${isPaused ? 'disabled' : ''}>
+          <i class="bi bi-arrow-repeat me-1"></i>Sync ora
+        </button>
+        <button class="btn btn-sm btn-danger ms-auto" onclick="openPromote(${j.id})" ${isFailover ? 'disabled' : ''}>
+          <i class="bi bi-lightning-fill me-1"></i>Failover manuale
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── Actions ───────────────────────────────────────────
+async function createReplication() {
+  const srcHost = document.getElementById('nr-src-host').value;
+  const srcVm = document.getElementById('nr-src-vm').value;
+  const dstHost = document.getElementById('nr-dst-host').value;
+  const dstVm = document.getElementById('nr-dst-vm').value;
+  const name = document.getElementById('nr-name').value;
+  if (!name || !srcHost || !srcVm || !dstHost || !dstVm) {
+    showToast('Compila tutti i campi obbligatori', 'warning'); return;
+  }
+  const payload = {
+    name,
+    source_host_id: +srcHost,
+    source_vm_name: srcVm,
+    target_host_id: +dstHost,
+    target_vm_name: dstVm,
+    target_datastore: document.getElementById('nr-datastore').value || null,
+    cron_expression: document.getElementById('nr-cron').value || '0 2 * * *',
+    auto_failover: document.getElementById('nr-auto-failover').checked,
+    heartbeat_interval_sec: +document.getElementById('nr-hb-interval').value || 60,
+    heartbeat_max_failures: +document.getElementById('nr-hb-failures').value || 3,
+    source_vm_ip: document.getElementById('nr-src-ip').value || null,
+  };
+  try {
+    await api('POST', '/api/replication', payload);
+    bootstrap.Modal.getInstance(document.getElementById('newReplModal')).hide();
+    showToast('Replica creata!', 'success');
+    loadJobs();
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
+async function syncNow(id) {
+  try {
+    await api('POST', `/api/replication/${id}/run`);
+    showToast('Sync avviato in background — aggiornamento tra qualche secondo…', 'info');
+    setTimeout(loadJobs, 3000);
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
+function openPromote(id) {
+  const j = replJobs.find(x => x.id === id);
+  if (!j) return;
+  promoteJobId = id;
+  document.getElementById('promote-text').innerHTML =
+    `Stai per promuovere <strong>${j.target_vm_name}</strong> (su <em>${j.target_host_name || j.target_host_ip}</em>) come VM primaria, avviandola.`;
+  document.getElementById('confirm-promote-btn').onclick = () => confirmPromote();
+  new bootstrap.Modal(document.getElementById('promoteModal')).show();
+}
+
+async function confirmPromote() {
+  bootstrap.Modal.getInstance(document.getElementById('promoteModal')).hide();
+  try {
+    await api('POST', `/api/replication/${promoteJobId}/promote`);
+    showToast('Failover avviato — la VM standby si sta avviando…', 'warning');
+    setTimeout(loadJobs, 5000);
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
+async function pauseJob(id) {
+  try { await api('POST', `/api/replication/${id}/pause`); loadJobs(); } catch(e) { showToast(e.message,'danger'); }
+}
+async function resumeJob(id) {
+  try { await api('POST', `/api/replication/${id}/resume`); loadJobs(); } catch(e) { showToast(e.message,'danger'); }
+}
+async function deleteJob(id) {
+  if (!confirm('Eliminare questo job di replica? La VM standby NON verrà eliminata da ESXi.')) return;
+  try { await api('DELETE', `/api/replication/${id}`); loadJobs(); showToast('Job eliminato','success'); } catch(e) { showToast(e.message,'danger'); }
+}
+
+init();
+</script>
+{% endblock %}

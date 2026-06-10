@@ -72,6 +72,75 @@ class VMwareHost(Base):
     servers = relationship("Server", back_populates="vmware_host")
 
 
+class ReplicationStatus(str, enum.Enum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+
+class ReplicationSyncStatus(str, enum.Enum):
+    NEVER = "never"
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+class FailoverState(str, enum.Enum):
+    NORMAL = "normal"        # VM-A primaria, VM-B standby
+    FAILOVER = "failover"    # VM-B promossa a primaria
+
+class VMReplicationJob(Base):
+    __tablename__ = "vm_replication_jobs"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text)
+
+    # Sorgente (VM primaria)
+    source_host_id = Column(Integer, ForeignKey("vmware_hosts.id"), nullable=False)
+    source_vm_name = Column(String(255), nullable=False)
+
+    # Destinazione (VM standby)
+    target_host_id = Column(Integer, ForeignKey("vmware_hosts.id"), nullable=False)
+    target_vm_name = Column(String(255), nullable=False)
+    target_datastore = Column(String(255))  # datastore su ESXi target (opzionale)
+
+    # Schedule
+    cron_expression = Column(String(100), nullable=False, default="0 2 * * *")
+    status = Column(SAEnum(ReplicationStatus), default=ReplicationStatus.ACTIVE)
+
+    # Auto-failover
+    auto_failover = Column(Boolean, default=False)
+    heartbeat_interval_sec = Column(Integer, default=60)   # ogni quanto controlla
+    heartbeat_max_failures = Column(Integer, default=3)    # quanti fail consecutivi prima di failover
+    heartbeat_failures = Column(Integer, default=0)        # contatore corrente
+    source_vm_ip = Column(String(45))                      # IP da pingare per heartbeat (opzionale)
+
+    # Stato
+    failover_state = Column(SAEnum(FailoverState), default=FailoverState.NORMAL)
+    last_sync_at = Column(DateTime)
+    last_sync_status = Column(SAEnum(ReplicationSyncStatus), default=ReplicationSyncStatus.NEVER)
+    last_sync_duration_sec = Column(Integer)
+    last_heartbeat_at = Column(DateTime)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    source_host = relationship("VMwareHost", foreign_keys=[source_host_id])
+    target_host = relationship("VMwareHost", foreign_keys=[target_host_id])
+    runs = relationship("VMReplicationRun", back_populates="job", order_by="VMReplicationRun.started_at.desc()")
+
+
+class VMReplicationRun(Base):
+    __tablename__ = "vm_replication_runs"
+
+    id = Column(Integer, primary_key=True)
+    job_id = Column(Integer, ForeignKey("vm_replication_jobs.id"), nullable=False)
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    finished_at = Column(DateTime)
+    status = Column(SAEnum(ReplicationSyncStatus), default=ReplicationSyncStatus.RUNNING)
+    triggered_by = Column(String(50), default="scheduler")  # "scheduler", "manual", "heartbeat_failover"
+    error_message = Column(Text)
+    log_output = Column(Text)
+
+    job = relationship("VMReplicationJob", back_populates="runs")
+
+
 class Server(Base):
     __tablename__ = "servers"
 
