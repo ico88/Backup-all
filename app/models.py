@@ -11,6 +11,7 @@ class ServerType(str, enum.Enum):
     WINDOWS = "windows"
     LINUX = "linux"
     VMWARE = "vmware"
+    XCPNG = "xcpng"
 
 
 class BackupType(str, enum.Enum):
@@ -69,7 +70,20 @@ class VMwareHost(Base):
     ssl_verify = Column(Boolean, default=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    servers = relationship("Server", back_populates="vmware_host")
+    servers = relationship("Server", back_populates="vmware_host", foreign_keys="[Server.vmware_host_id]")
+
+
+class XCPHost(Base):
+    __tablename__ = "xcp_hosts"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    host = Column(String(255), nullable=False)
+    port = Column(Integer, default=443)
+    username = Column(String(100), nullable=False)
+    password_enc = Column(Text, nullable=False)
+    ssl_verify = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    servers = relationship("Server", back_populates="xcp_host", foreign_keys="[Server.xcp_host_id]")
 
 
 class ReplicationStatus(str, enum.Enum):
@@ -162,10 +176,12 @@ class Server(Base):
     app_db_name = Column(String(100))
     app_db_user = Column(String(100))
     app_db_password_enc = Column(Text)
+    xcp_host_id = Column(Integer, ForeignKey("xcp_hosts.id"))
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    vmware_host = relationship("VMwareHost", back_populates="servers")
+    vmware_host = relationship("VMwareHost", back_populates="servers", foreign_keys=[vmware_host_id])
+    xcp_host = relationship("XCPHost", back_populates="servers", foreign_keys=[xcp_host_id])
     backup_jobs = relationship("BackupJob", back_populates="server")
 
 

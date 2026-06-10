@@ -49,6 +49,11 @@
                 <i class="bi bi-cloud-haze2 me-1"></i>VMware
               </button>
             </li>
+            <li class="nav-item">
+              <button class="nav-link" id="tab-xcpng" onclick="switchTab('xcpng')">
+                <i class="bi bi-cpu me-1"></i>XCP-ng
+              </button>
+            </li>
           </ul>
 
           <!-- ── LINUX ── -->
@@ -291,6 +296,100 @@
             </div>
           </div>
 
+          <!-- ── XCP-ng ── -->
+          <div id="panel-xcpng" style="display:none">
+            <form id="form-xcpng">
+              <div class="alert alert-secondary py-2 mb-3" style="font-size:.83rem">
+                <i class="bi bi-info-circle me-1"></i>
+                Configura prima un <strong>host XCP-ng</strong> nella sezione qui sotto, poi seleziona la VM da proteggere.
+              </div>
+              <div class="row g-3">
+                <div class="col-md-5">
+                  <label class="form-label">Nome sorgente</label>
+                  <input class="form-control" id="xcp-name" placeholder="vm-xcp-snapshot" required>
+                </div>
+                <div class="col-md-7">
+                  <label class="form-label">Host XCP-ng</label>
+                  <div class="d-flex gap-2">
+                    <select class="form-select" id="xcp-host" required onchange="loadXCPVMs()">
+                      <option value="">— seleziona host —</option>
+                    </select>
+                    <button type="button" class="btn btn-outline-secondary" onclick="loadXCPHosts()" title="Ricarica">
+                      <i class="bi bi-arrow-repeat"></i>
+                    </button>
+                  </div>
+                </div>
+                <div class="col-md-7">
+                  <label class="form-label">Virtual Machine</label>
+                  <select class="form-select" id="xcp-vm" required>
+                    <option value="">— seleziona host prima —</option>
+                  </select>
+                </div>
+                <div class="col-md-5">
+                  <label class="form-label">Descrizione <span class="text-muted fw-normal">(opzionale)</span></label>
+                  <input class="form-control" id="xcp-desc">
+                </div>
+              </div>
+              <div id="test-result-xcpng" class="mt-3" style="display:none"></div>
+              <div class="d-flex justify-content-between align-items-center mt-4">
+                <button type="button" class="btn btn-outline-secondary" onclick="testInlineXCP()">
+                  <i class="bi bi-wifi me-1"></i>Testa connessione XCP-ng
+                </button>
+                <button type="submit" class="btn btn-primary" style="background:#2d1b69;border-color:#2d1b69">
+                  <i class="bi bi-check-lg me-1"></i>Salva sorgente XCP-ng
+                </button>
+              </div>
+            </form>
+
+            <!-- Gestione host XCP-ng -->
+            <hr class="my-4">
+            <div class="d-flex align-items-center justify-content-between mb-3">
+              <h6 class="mb-0 text-muted">Host XCP-ng configurati</h6>
+              <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#add-xcpng-form">
+                <i class="bi bi-plus-lg"></i> Aggiungi host XCP-ng
+              </button>
+            </div>
+            <div id="xcpng-list" class="mb-3"></div>
+            <div class="collapse" id="add-xcpng-form">
+              <div class="card card-body bg-dark border-secondary">
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <label class="form-label">Nome</label>
+                    <input class="form-control" id="xn-name" placeholder="XCP-ng principale">
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">IP / hostname XCP-ng</label>
+                    <input class="form-control" id="xn-host" placeholder="192.168.1.x">
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label">Porta</label>
+                    <input class="form-control" id="xn-port" value="443" type="number">
+                  </div>
+                  <div class="col-md-2">
+                    <label class="form-label">SSL verify</label>
+                    <div class="form-check mt-2">
+                      <input class="form-check-input" type="checkbox" id="xn-ssl">
+                      <label class="form-check-label" for="xn-ssl">Verifica</label>
+                    </div>
+                  </div>
+                  <div class="col-md-5">
+                    <label class="form-label">Utente XCP-ng</label>
+                    <input class="form-control" id="xn-user" placeholder="root">
+                  </div>
+                  <div class="col-md-5">
+                    <label class="form-label">Password XCP-ng</label>
+                    <input type="password" class="form-control" id="xn-pass">
+                  </div>
+                  <div class="col-md-2 d-flex align-items-end">
+                    <button type="button" class="btn w-100" style="background:#2d1b69;color:#c4b5fd;border-color:#2d1b69" onclick="saveXCPHost()">
+                      <i class="bi bi-check-lg"></i> Salva
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
@@ -336,14 +435,16 @@ let editingId = null;
 let editingType = null;
 let serverList = [];
 let vmwareHosts = [];
+let xcpHosts = [];
 
 // ── Tab switching ─────────────────────────────────────
 function switchTab(type) {
-  ['linux','windows','vmware'].forEach(t => {
+  ['linux','windows','vmware','xcpng'].forEach(t => {
     document.getElementById('panel-' + t).style.display = t === type ? '' : 'none';
     document.getElementById('tab-' + t).classList.toggle('active', t === type);
   });
   if (type === 'vmware') loadVmwareHosts();
+  if (type === 'xcpng') loadXCPHosts();
 }
 
 // ── DB field visibility ───────────────────────────────
@@ -358,6 +459,7 @@ function toggleDbFields(prefix) {
 function typeBadge(t) {
   if (t === 'linux')   return '<span class="badge" style="background:#166534;color:#bbf7d0"><i class="bi bi-terminal me-1"></i>Linux</span>';
   if (t === 'windows') return '<span class="badge" style="background:#1e3a5f;color:#bae6fd"><i class="bi bi-windows me-1"></i>Windows</span>';
+  if (t === 'xcpng')   return '<span class="badge" style="background:#2d1b69;color:#c4b5fd"><i class="bi bi-cpu me-1"></i>XCP-ng</span>';
   return '<span class="badge" style="background:#4a2c00;color:#fde68a"><i class="bi bi-cloud-haze2 me-1"></i>VMware</span>';
 }
 
@@ -380,6 +482,9 @@ async function loadServers() {
       let hostCell, userCell;
       if (s.server_type === 'vmware') {
         hostCell = `<small>${s.vmware_host_name || '—'} / <span style="color:#fbbf24">${s.vm_name || '—'}</span></small>`;
+        userCell = '—';
+      } else if (s.server_type === 'xcpng') {
+        hostCell = `<small>${s.xcp_host_name || '—'} / <span style="color:#c4b5fd">${s.vm_name || '—'}</span></small>`;
         userCell = '—';
       } else {
         hostCell = `<code style="color:#fbbf24">${s.ip_address}</code>`;
@@ -471,6 +576,78 @@ async function saveEsxiHost() {
   } catch(e) { showToast(e.message, 'danger'); }
 }
 
+// ── XCP-ng hosts ─────────────────────────────────────
+async function loadXCPHosts() {
+  try {
+    xcpHosts = await api('GET', '/api/servers/xcp-hosts');
+    const sel = document.getElementById('xcp-host');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">— seleziona host —</option>';
+    xcpHosts.forEach(h => {
+      const o = document.createElement('option');
+      o.value = h.id; o.textContent = `${h.name} (${h.host})`;
+      sel.appendChild(o);
+    });
+    if (cur) sel.value = cur;
+    renderXCPList();
+  } catch(e) {}
+}
+
+function renderXCPList() {
+  const el = document.getElementById('xcpng-list');
+  if (!el) return;
+  if (!xcpHosts.length) { el.innerHTML = '<p class="text-muted small">Nessun host configurato.</p>'; return; }
+  el.innerHTML = xcpHosts.map(h => `
+    <div class="d-flex align-items-center gap-3 py-2 border-bottom border-secondary">
+      <span class="badge" style="background:#2d1b69;color:#c4b5fd"><i class="bi bi-cpu"></i></span>
+      <span class="fw-semibold">${h.name}</span>
+      <code style="color:#c4b5fd;font-size:.8rem">${h.host}:${h.port}</code>
+      <small class="text-muted">${h.username}</small>
+    </div>`).join('');
+}
+
+async function loadXCPVMs() {
+  const hostId = document.getElementById('xcp-host').value;
+  const vmSel = document.getElementById('xcp-vm');
+  vmSel.innerHTML = '<option value="">Caricamento...</option>';
+  if (!hostId) { vmSel.innerHTML = '<option value="">— seleziona host prima —</option>'; return; }
+  try {
+    const vms = await api('GET', `/api/servers/xcp-hosts/${hostId}/vms`);
+    vmSel.innerHTML = '<option value="">— seleziona VM —</option>';
+    vms.forEach(v => {
+      const o = document.createElement('option');
+      o.value = v.name; o.textContent = `${v.name}  (${v.power_state || ''})`;
+      vmSel.appendChild(o);
+    });
+  } catch(e) {
+    vmSel.innerHTML = '<option value="">Errore connessione XCP-ng</option>';
+    showToast('Errore connessione XCP-ng: ' + e.message, 'danger');
+  }
+}
+
+async function saveXCPHost() {
+  const payload = {
+    name: document.getElementById('xn-name').value,
+    host: document.getElementById('xn-host').value,
+    port: +document.getElementById('xn-port').value || 443,
+    username: document.getElementById('xn-user').value,
+    password: document.getElementById('xn-pass').value,
+    ssl_verify: document.getElementById('xn-ssl').checked,
+  };
+  if (!payload.name || !payload.host || !payload.username || !payload.password) {
+    showToast('Compila tutti i campi host XCP-ng', 'warning'); return;
+  }
+  try {
+    await api('POST', '/api/servers/xcp-hosts', payload);
+    showToast('Host XCP-ng salvato!', 'success');
+    ['xn-name','xn-host','xn-user','xn-pass'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('xn-port').value = '443';
+    bootstrap.Collapse.getInstance(document.getElementById('add-xcpng-form'))?.hide();
+    loadXCPHosts();
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
 // ── Form submit ───────────────────────────────────────
 function parsePaths(raw) { return raw.split('\n').map(s=>s.trim()).filter(Boolean); }
 
@@ -554,6 +731,32 @@ document.getElementById('form-vmware').addEventListener('submit', async e => {
   } catch(err) { showToast(err.message, 'danger'); }
 });
 
+document.getElementById('form-xcpng').addEventListener('submit', async e => {
+  e.preventDefault();
+  const hostId = +document.getElementById('xcp-host').value;
+  const vmName = document.getElementById('xcp-vm').value;
+  if (!hostId || !vmName) { showToast('Seleziona host XCP-ng e VM', 'warning'); return; }
+  const host = xcpHosts.find(h => h.id === hostId);
+  const p = {
+    name: document.getElementById('xcp-name').value,
+    description: document.getElementById('xcp-desc').value || null,
+    server_type: 'xcpng',
+    ip_address: host ? host.host : '',
+    xcp_host_id: hostId,
+    vm_name: vmName,
+    ssh_port: 22, winrm_port: 5985,
+    app_data_paths: [],
+  };
+  try {
+    await api('POST', '/api/servers', p);
+    showToast('Sorgente XCP-ng salvata!', 'success');
+    e.target.reset();
+    document.getElementById('xcp-vm').innerHTML = '<option value="">— seleziona host prima —</option>';
+    bootstrap.Collapse.getInstance(document.getElementById('add-form'))?.hide();
+    loadServers();
+  } catch(err) { showToast(err.message, 'danger'); }
+});
+
 // ── Edit modal ────────────────────────────────────────
 function openEdit(id) {
   const s = serverList.find(x => x.id === id);
@@ -561,7 +764,7 @@ function openEdit(id) {
   editingId = id;
   editingType = s.server_type;
 
-  const labels = { linux: 'Linux', windows: 'Windows', vmware: 'VMware' };
+  const labels = { linux: 'Linux', windows: 'Windows', vmware: 'VMware', xcpng: 'XCP-ng' };
   document.getElementById('edit-type-label').textContent = labels[s.server_type] || s.server_type;
   document.getElementById('test-result').style.display = 'none';
 
@@ -576,6 +779,17 @@ function openEdit(id) {
         <input class="form-control" id="ef-desc" value="${s.description||''}"></div>
       <div class="col-12"><div class="alert alert-secondary py-2" style="font-size:.82rem">
         <i class="bi bi-info-circle me-1"></i>Per cambiare host ESXi o VM, elimina e ricrea la sorgente.
+      </div></div>`;
+  } else if (s.server_type === 'xcpng') {
+    f.innerHTML = `
+      <div class="col-md-6"><label class="form-label">Nome</label>
+        <input class="form-control" id="ef-name" value="${s.name||''}"></div>
+      <div class="col-md-6"><label class="form-label">VM name</label>
+        <input class="form-control" id="ef-vm-name" value="${s.vm_name||''}"></div>
+      <div class="col-12"><label class="form-label">Descrizione</label>
+        <input class="form-control" id="ef-desc" value="${s.description||''}"></div>
+      <div class="col-12"><div class="alert alert-secondary py-2" style="font-size:.82rem">
+        <i class="bi bi-info-circle me-1"></i>Per cambiare host XCP-ng o VM, elimina e ricrea la sorgente.
       </div></div>`;
   } else if (s.server_type === 'windows') {
     f.innerHTML = `
@@ -620,6 +834,16 @@ async function saveEdit() {
       server_type: 'vmware',
       ip_address: s.ip_address,
       vmware_host_id: s.vmware_host_id,
+      vm_name: document.getElementById('ef-vm-name').value,
+      ssh_port: 22, winrm_port: 5985, app_data_paths: [],
+    };
+  } else if (editingType === 'xcpng') {
+    payload = {
+      name: document.getElementById('ef-name').value,
+      description: document.getElementById('ef-desc').value || null,
+      server_type: 'xcpng',
+      ip_address: s.ip_address,
+      xcp_host_id: s.xcp_host_id,
       vm_name: document.getElementById('ef-vm-name').value,
       ssh_port: 22, winrm_port: 5985, app_data_paths: [],
     };
@@ -715,6 +939,18 @@ function testInlineVmware() {
     vmware_host_id: hostId,
     vm_name: vmName || null,
   }, 'test-result-vmware', event.target.closest('button'));
+}
+
+function testInlineXCP() {
+  const hostId = +document.getElementById('xcp-host').value;
+  const vmName = document.getElementById('xcp-vm').value;
+  if (!hostId) { showToast('Seleziona prima un host XCP-ng', 'warning'); return; }
+  _runInlineTest({
+    server_type: 'xcpng',
+    ip_address: '',
+    xcp_host_id: hostId,
+    vm_name: vmName || null,
+  }, 'test-result-xcpng', event.target.closest('button'));
 }
 
 loadServers();

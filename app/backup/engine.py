@@ -105,6 +105,26 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
                     qnap.apply_count_retention(dest_cfg, server.name, job.retention_copies, log)
                 return run
 
+        # ── SORGENTE XCP-ng: streaming diretto XCP-ng → QNAP ─────
+        elif server.server_type == ServerType.XCPNG:
+            if not server.vm_name or not server.xcp_host:
+                log("vm_name o xcp_host non configurati, skip backup XCP-ng", "WARNING")
+            else:
+                from app.backup import xcpng
+                remote_path = os.path.join(dest_cfg.base_path, remote_subpath).replace("\\", "/")
+                log(f"Avvio streaming VM XCP-ng → QNAP {dest_cfg.host}:{remote_path}...")
+                xcpng.stream_vm_to_remote(server.xcp_host, server.vm_name, dest_cfg, remote_path, log)
+                run.status = RunStatus.SUCCESS
+                run.backup_path = remote_subpath
+                run.finished_at = datetime.now(timezone.utc)
+                job.last_run_at = run.finished_at
+                job.last_run_status = RunStatus.SUCCESS
+                db.commit()
+                log("Backup XCP-ng completato.")
+                if job.retention_copies and job.retention_copies > 0:
+                    qnap.apply_count_retention(dest_cfg, server.name, job.retention_copies, log)
+                return run
+
         else:
             # ── SNAPSHOT opzionale per Linux/Windows su VMware ───────
             if job.backup_type in (BackupType.VM_SNAPSHOT, BackupType.FULL):

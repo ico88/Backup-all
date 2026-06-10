@@ -20,6 +20,15 @@ class VMwareHostCreate(BaseModel):
     ssl_verify: bool = False
 
 
+class XCPHostCreate(BaseModel):
+    name: str
+    host: str
+    port: int = 443
+    username: str
+    password: str
+    ssl_verify: bool = False
+
+
 class ServerCreate(BaseModel):
     name: str
     description: Optional[str] = None
@@ -27,6 +36,7 @@ class ServerCreate(BaseModel):
     ip_address: str
     vm_name: Optional[str] = None
     vmware_host_id: Optional[int] = None
+    xcp_host_id: Optional[int] = None
     ssh_port: int = 22
     winrm_port: int = 5985
     username: Optional[str] = None
@@ -74,6 +84,43 @@ def list_vms_on_host(host_id: int, db: Session = Depends(get_db)):
         raise HTTPException(500, str(e))
 
 
+# ── XCP-ng Hosts ──────────────────────────────────────
+
+@router.get("/xcp-hosts")
+def list_xcp_hosts(db: Session = Depends(get_db)):
+    from app.models import XCPHost
+    hosts = db.query(XCPHost).all()
+    return [{"id": h.id, "name": h.name, "host": h.host, "port": h.port,
+             "username": h.username} for h in hosts]
+
+
+@router.post("/xcp-hosts", status_code=201)
+def create_xcp_host(data: XCPHostCreate, db: Session = Depends(get_db)):
+    from app.models import XCPHost
+    host = XCPHost(
+        name=data.name, host=data.host, port=data.port,
+        username=data.username, password_enc=encrypt(data.password),
+        ssl_verify=data.ssl_verify,
+    )
+    db.add(host)
+    db.commit()
+    db.refresh(host)
+    return {"id": host.id, "name": host.name}
+
+
+@router.get("/xcp-hosts/{host_id}/vms")
+def list_vms_xcp(host_id: int, db: Session = Depends(get_db)):
+    from app.models import XCPHost
+    from app.backup.xcpng import list_vms
+    host = db.get(XCPHost, host_id)
+    if not host:
+        raise HTTPException(404, "Host XCP-ng non trovato")
+    try:
+        return list_vms(host)
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
 # ── Servers ───────────────────────────────────────────
 
 @router.get("")
@@ -99,6 +146,7 @@ def create_server(data: ServerCreate, db: Session = Depends(get_db)):
         ip_address=data.ip_address,
         vm_name=data.vm_name,
         vmware_host_id=data.vmware_host_id,
+        xcp_host_id=data.xcp_host_id,
         ssh_port=data.ssh_port,
         winrm_port=data.winrm_port,
         username=data.username,
@@ -128,6 +176,7 @@ def update_server(server_id: int, data: ServerCreate, db: Session = Depends(get_
     s.ip_address = data.ip_address
     s.vm_name = data.vm_name
     s.vmware_host_id = data.vmware_host_id
+    s.xcp_host_id = data.xcp_host_id
     s.ssh_port = data.ssh_port
     s.winrm_port = data.winrm_port
     s.username = data.username
@@ -153,6 +202,7 @@ class ServerTestInline(BaseModel):
     username: Optional[str] = None
     password: Optional[str] = None
     vmware_host_id: Optional[int] = None
+    xcp_host_id: Optional[int] = None
     vm_name: Optional[str] = None
 
 
@@ -176,6 +226,25 @@ def test_server_inline(data: ServerTestInline, db: Session = Depends(get_db)):
             raise
         except Exception as e:
             raise HTTPException(500, f"Errore connessione ESXi {host.host}: {e}")
+
+    if data.server_type == ServerType.XCPNG:
+        if not data.xcp_host_id:
+            raise HTTPException(400, "Seleziona un host XCP-ng prima di testare")
+        from app.models import XCPHost
+        host = db.get(XCPHost, data.xcp_host_id)
+        if not host:
+            raise HTTPException(404, "Host XCP-ng non trovato")
+        try:
+            from app.backup.xcpng import list_vms
+            vms = list_vms(host)
+            vm_names = [v["name"] for v in vms]
+            if data.vm_name and data.vm_name not in vm_names:
+                raise HTTPException(500, f"VM '{data.vm_name}' non trovata su {host.host}. Disponibili: {', '.join(vm_names[:5])}")
+            return {"ok": True, "message": f"Connessione a XCP-ng {host.host} riuscita — {len(vms)} VM trovate ✓"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Errore connessione XCP-ng {host.host}: {e}")
 
     if data.server_type == ServerType.WINDOWS:
         port = data.winrm_port or 5985
@@ -253,6 +322,25 @@ def test_server(server_id: int, db: Session = Depends(get_db)):
         except Exception as e:
             raise HTTPException(500, f"Errore connessione ESXi {host.host}: {e}")
 
+    if s.server_type == ServerType.XCPNG:
+        if not s.xcp_host_id:
+            raise HTTPException(400, "Nessun host XCP-ng associato a questa sorgente")
+        from app.models import XCPHost
+        host = db.get(XCPHost, s.xcp_host_id)
+        if not host:
+            raise HTTPException(404, "Host XCP-ng non trovato nel DB")
+        try:
+            from app.backup.xcpng import list_vms
+            vms = list_vms(host)
+            vm_names = [v["name"] for v in vms]
+            if s.vm_name and s.vm_name not in vm_names:
+                raise HTTPException(500, f"VM '{s.vm_name}' non trovata su {host.host}. VM disponibili: {', '.join(vm_names[:5])}")
+            return {"ok": True, "message": f"Connessione a XCP-ng {host.host} riuscita — {len(vms)} VM trovate ✓"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Errore connessione XCP-ng {host.host}: {e}")
+
     if s.server_type == ServerType.WINDOWS:
         port = s.winrm_port or 5985
         try:
@@ -325,6 +413,8 @@ def _serialize(s: Server) -> dict:
         "username": s.username,
         "vm_name": s.vm_name, "vmware_host_id": s.vmware_host_id,
         "vmware_host_name": s.vmware_host.name if s.vmware_host else None,
+        "xcp_host_id": s.xcp_host_id,
+        "xcp_host_name": s.xcp_host.name if s.xcp_host else None,
         "app_name": s.app_name,
         "app_data_paths": json.loads(s.app_data_paths or "[]"),
         "app_db_type": s.app_db_type, "app_db_name": s.app_db_name,

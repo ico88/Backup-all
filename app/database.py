@@ -34,6 +34,7 @@ def _migrate():
     with engine.connect() as conn:
         migrations = [
             ("backup_destinations", "smb_share", "VARCHAR(200)"),
+            ("servers", "xcp_host_id", "INTEGER REFERENCES xcp_hosts(id)"),
         ]
         for table, column, col_type in migrations:
             try:
