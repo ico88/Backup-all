@@ -249,8 +249,8 @@ New-Item -ItemType File -Path {_ps_quote(script_b64_path)} -Force | Out-Null
             + init_result.std_err.decode(errors="replace")
         )
 
-    for offset in range(0, len(script_b64), 3000):
-        chunk = script_b64[offset:offset + 3000]
+    for offset in range(0, len(script_b64), 500):
+        chunk = script_b64[offset:offset + 500]
         append_cmd = f"""
 $ErrorActionPreference = 'Stop'
 Add-Content -Path {_ps_quote(script_b64_path)} -Value {_ps_quote(chunk)} -NoNewline
