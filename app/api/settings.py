@@ -10,6 +10,7 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 SMTP_KEYS = ["smtp_host", "smtp_port", "smtp_user", "smtp_password",
              "smtp_from", "smtp_tls"]
+GENERAL_KEYS = ["organization"]
 
 
 class SmtpSettings(BaseModel):
@@ -44,6 +45,19 @@ def _set(db: Session, key: str, value: str):
     else:
         db.add(SystemSettings(key=key, value=value))
     db.commit()
+
+
+@router.get("/general")
+def get_general(db: Session = Depends(get_db)):
+    return {"organization": _get(db, "organization") or ""}
+
+
+@router.put("/general")
+def save_general(request: Request, data: dict, db: Session = Depends(get_db)):
+    _require_admin(request, db)
+    if "organization" in data:
+        _set(db, "organization", data["organization"])
+    return {"ok": True}
 
 
 @router.get("/smtp")
@@ -81,7 +95,8 @@ def test_smtp(request: Request, db: Session = Depends(get_db)):
     email = user.email or "test@example.com"
     from app.notifications import send_email
     try:
-        send_email(db, email, "Test SMTP — Backup-All CRI Catania",
+        org = _get(db, "organization") or "Backup-All"
+        send_email(db, email, f"Test SMTP — {org}",
                    "Se ricevi questa email, la configurazione SMTP è corretta.")
         return {"ok": True, "message": f"Email di test inviata a {email}"}
     except Exception as e:

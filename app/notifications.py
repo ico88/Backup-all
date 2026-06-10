@@ -70,7 +70,8 @@ def notify_backup_result(db: Session, job, run):
     if run.integrity_verified is not None:
         integrity_line = f"Integrità verificata: {'Sì' if run.integrity_verified else 'NO - CHECKSUM NON CORRISPONDENTE'}\n"
 
-    body = f"""Backup-All CRI Catania — Notifica automatica
+    org = _get_setting(db, "organization") or "Backup-All"
+    body = f"""{org} — Notifica automatica
 ═══════════════════════════════════════════════
 
 Job:         {job.name}
