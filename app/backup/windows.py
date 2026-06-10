@@ -1,8 +1,16 @@
 """Backup dati applicativi da server Windows via WinRM."""
+import base64
 import json
 import os
+import time
+import uuid
 import winrm
 from app.crypto import decrypt
+
+
+def _ps_quote(value: str) -> str:
+    """Quote a value for a single-quoted PowerShell string."""
+    return "'" + (value or "").replace("'", "''") + "'"
 
 
 def _get_session(server) -> winrm.Session:
@@ -142,69 +150,118 @@ def backup_system_wbadmin(server, dest_cfg, timestamp: str, log_fn=None) -> None
     unc_base = f"\\\\{dest_cfg.host}\\{smb_share}"
     backup_target = f"{unc_base}\\{server.name}\\{timestamp}"
 
-    # Con WinRM, New-PSDrive con credenziali puo fallire nel passaggio verso SMB
-    # (double hop). Usiamo net.exe sulla share base, poi wbadmin sul path UNC.
-    smb_password_esc = smb_password.replace("'", "''")
-    smb_user_esc = smb_user.replace("'", "''")
+    task_id = uuid.uuid4().hex[:12]
+    task_name = f"BackupAll_wbadmin_{task_id}"
+    script_path = f"C:\\Windows\\Temp\\{task_name}.ps1"
+    log_path = f"C:\\Windows\\Temp\\{task_name}.log"
+    server_password = decrypt(server.password_enc)
 
-    connect_block = ""
-    disconnect_block = ""
-    if smb_user:
-        connect_block = f"""
-$smbUser = '{smb_user_esc}'
-$smbPassword = '{smb_password_esc}'
-& cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
-$credTarget = '{dest_cfg.host}'
-$cmdKeyOutput = & cmdkey.exe /add:$credTarget /user:$smbUser /pass:$smbPassword 2>&1
-if ($LASTEXITCODE -ne 0) {{
-    throw "Salvataggio credenziali SMB fallito ($LASTEXITCODE): $cmdKeyOutput"
-}}
-$netUseArgs = @('use', $uncBase, '/persistent:no')
-$netUseOutput = & net.exe @netUseArgs 2>&1
-if ($LASTEXITCODE -ne 0) {{
-    throw "Connessione SMB fallita ($LASTEXITCODE): $netUseOutput"
-}}
-"""
-        disconnect_block = f"""
-& cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
-& cmdkey.exe /delete:{dest_cfg.host} 2>$null | Out-Null
-"""
-
-    ps_cmd = f"""
+    backup_script = f"""
 $ErrorActionPreference = 'Stop'
-$uncBase = '{unc_base}'
-$backupTarget = '{backup_target}'
+$ProgressPreference = 'SilentlyContinue'
+$uncBase = {_ps_quote(unc_base)}
+$backupTarget = {_ps_quote(backup_target)}
+$smbUser = {_ps_quote(smb_user)}
+$smbPassword = {_ps_quote(smb_password)}
+$logPath = {_ps_quote(log_path)}
 
-{connect_block}
+Start-Transcript -Path $logPath -Force | Out-Null
+try {{
+    if ($smbUser) {{
+        & cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
+        $netUseArgs = @('use', $uncBase, $smbPassword, "/user:$smbUser", '/persistent:no')
+        $netUseOutput = & net.exe @netUseArgs 2>&1
+        if ($LASTEXITCODE -ne 0) {{
+            throw "Connessione SMB fallita ($LASTEXITCODE): $netUseOutput"
+        }}
+    }}
 
-# Crea la cartella di destinazione
-New-Item -ItemType Directory -Path $backupTarget -Force | Out-Null
-
-# Esegui wbadmin
-$output = & wbadmin start backup -backupTarget:$backupTarget -include:C: -allCritical -quiet 2>&1
-$rc = $LASTEXITCODE
-Write-Output $output
-if ($rc -eq 0) {{
+    New-Item -ItemType Directory -Path $backupTarget -Force | Out-Null
+    $output = & wbadmin start backup -backupTarget:$backupTarget -include:C: -allCritical -quiet 2>&1
+    $rc = $LASTEXITCODE
+    Write-Output $output
+    if ($rc -ne 0) {{
+        throw "WBADMIN_FAIL:$rc"
+    }}
     Write-Output 'WBADMIN_OK'
-}} else {{
-    Write-Output "WBADMIN_FAIL:$rc"
+}} finally {{
+    if ($smbUser) {{
+        & cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
+    }}
+    Stop-Transcript | Out-Null
 }}
-
-{disconnect_block}
 """
+    script_b64 = base64.b64encode(backup_script.encode("utf-8")).decode("ascii")
 
     if log_fn:
         log_fn(f"Avvio backup sistema Windows verso {backup_target} ...")
 
     session = _get_session(server)
-    result = session.run_ps(ps_cmd)
-    output = result.std_out.decode(errors="replace")
-    stderr = result.std_err.decode(errors="replace")
+    setup_cmd = f"""
+$ErrorActionPreference = 'Stop'
+$scriptPath = {_ps_quote(script_path)}
+$taskName = {_ps_quote(task_name)}
+$taskUser = {_ps_quote(server.username)}
+$taskPassword = {_ps_quote(server_password)}
+$scriptBytes = [Convert]::FromBase64String({_ps_quote(script_b64)})
+[System.IO.File]::WriteAllBytes($scriptPath, $scriptBytes)
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 24) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -User $taskUser -Password $taskPassword -RunLevel Highest -Force | Out-Null
+Start-ScheduledTask -TaskName $taskName
+Write-Output "TASK_STARTED:$taskName"
+"""
+    setup_result = session.run_ps(setup_cmd)
+    setup_output = setup_result.std_out.decode(errors="replace")
+    setup_stderr = setup_result.std_err.decode(errors="replace")
+    if setup_result.status_code != 0 or "TASK_STARTED:" not in setup_output:
+        raise RuntimeError(f"wbadmin fallito: avvio task schedulato fallito: {setup_stderr or setup_output}")
 
-    if log_fn and output.strip():
-        for line in output.strip().splitlines():
-            log_fn(f"wbadmin: {line}")
+    last_log_len = 0
+    deadline = time.time() + 24 * 60 * 60
+    final_result = None
+    while time.time() < deadline:
+        time.sleep(15)
+        poll_cmd = f"""
+$task = Get-ScheduledTask -TaskName {_ps_quote(task_name)}
+$info = Get-ScheduledTaskInfo -TaskName {_ps_quote(task_name)}
+$log = ''
+if (Test-Path {_ps_quote(log_path)}) {{
+    $log = Get-Content {_ps_quote(log_path)} -Raw
+}}
+Write-Output "STATE=$($task.State)"
+Write-Output "LAST_RESULT=$($info.LastTaskResult)"
+Write-Output "LOG_BEGIN"
+Write-Output $log
+Write-Output "LOG_END"
+"""
+        poll_result = session.run_ps(poll_cmd)
+        poll_output = poll_result.std_out.decode(errors="replace")
+        if "LOG_BEGIN" in poll_output and "LOG_END" in poll_output:
+            log_text = poll_output.split("LOG_BEGIN", 1)[1].split("LOG_END", 1)[0].strip()
+            if log_fn and len(log_text) > last_log_len:
+                new_text = log_text[last_log_len:].strip()
+                for line in new_text.splitlines()[-20:]:
+                    if line.strip():
+                        log_fn(f"wbadmin: {line}")
+                last_log_len = len(log_text)
+        if "STATE=Running" not in poll_output:
+            final_result = poll_output
+            break
+
+    cleanup_cmd = f"""
+Unregister-ScheduledTask -TaskName {_ps_quote(task_name)} -Confirm:$false -ErrorAction SilentlyContinue
+Remove-Item {_ps_quote(script_path)} -Force -ErrorAction SilentlyContinue
+Remove-Item {_ps_quote(log_path)} -Force -ErrorAction SilentlyContinue
+"""
+    session.run_ps(cleanup_cmd)
+
+    if not final_result:
+        raise RuntimeError("wbadmin fallito: timeout del task schedulato")
+
+    output = final_result
 
     if "WBADMIN_OK" not in output:
-        err_detail = stderr.strip() or output[-500:]
+        err_detail = output[-1000:]
         raise RuntimeError(f"wbadmin fallito: {err_detail}")
