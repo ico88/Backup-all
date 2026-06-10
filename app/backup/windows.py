@@ -199,7 +199,7 @@ try {{
                 Write-BackupLog "Connessione SMB riuscita con utente $candidateUser"
                 break
             }}
-            Write-BackupLog "Connessione SMB fallita con codice ${lastNetUseCode}: $netUseOutput"
+            Write-BackupLog "Connessione SMB fallita con codice ${{lastNetUseCode}}: $netUseOutput"
             & cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
         }}
         if (-not $connected) {{
