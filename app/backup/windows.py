@@ -142,9 +142,8 @@ def backup_system_wbadmin(server, dest_cfg, timestamp: str, log_fn=None) -> None
     unc_base = f"\\\\{dest_cfg.host}\\{smb_share}"
     backup_target = f"{unc_base}\\{server.name}\\{timestamp}"
 
-    # Mappa drive temporaneo per la share (wbadmin accetta sia UNC che drive lettera)
-    # Usiamo direttamente il path UNC con sottocartella server/timestamp
-    # Escape caratteri speciali per PowerShell
+    # Con WinRM, New-PSDrive con credenziali puo fallire nel passaggio verso SMB
+    # (double hop). Usiamo net.exe sulla share base, poi wbadmin sul path UNC.
     smb_password_esc = smb_password.replace("'", "''")
     smb_user_esc = smb_user.replace("'", "''")
 
@@ -152,11 +151,16 @@ def backup_system_wbadmin(server, dest_cfg, timestamp: str, log_fn=None) -> None
     disconnect_block = ""
     if smb_user:
         connect_block = f"""
-$smbPass = ConvertTo-SecureString '{smb_password_esc}' -AsPlainText -Force
-$smbCred = New-Object System.Management.Automation.PSCredential('{smb_user_esc}', $smbPass)
-New-PSDrive -Name 'BKP' -PSProvider FileSystem -Root '{unc_base}' -Credential $smbCred -Persist:$false -ErrorAction Stop | Out-Null
+$smbUser = '{smb_user_esc}'
+$smbPassword = '{smb_password_esc}'
+& net.exe use $uncBase /delete /yes 2>$null | Out-Null
+$netUseArgs = @('use', $uncBase, $smbPassword, "/user:$smbUser", '/persistent:no')
+$netUseOutput = & net.exe @netUseArgs 2>&1
+if ($LASTEXITCODE -ne 0) {{
+    throw "Connessione SMB fallita ($LASTEXITCODE): $netUseOutput"
+}}
 """
-        disconnect_block = "Remove-PSDrive -Name 'BKP' -Force -ErrorAction SilentlyContinue"
+        disconnect_block = "& net.exe use $uncBase /delete /yes 2>$null | Out-Null"
 
     ps_cmd = f"""
 $ErrorActionPreference = 'Stop'
