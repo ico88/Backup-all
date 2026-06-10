@@ -59,6 +59,12 @@
           <!-- ── LINUX ── -->
           <div id="panel-linux">
             <form id="form-linux">
+              <div class="alert alert-info py-2 px-3 mb-3" style="font-size:.8rem;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25);color:#93c5fd">
+                <i class="bi bi-info-circle me-2"></i><strong>Requisiti sul server Linux:</strong>
+                SSH abilitato e raggiungibile (porta 22). L'utente deve poter leggere i percorsi dati configurati.
+                Per backup database: <code>mysqldump</code> / <code>pg_dump</code> installato e accessibile dall'utente.
+                Consigliato usare un utente dedicato con accesso limitato alle sole cartelle da backuppare.
+              </div>
               <div class="row g-3">
                 <div class="col-md-6">
                   <label class="form-label">Nome sorgente</label>
@@ -132,6 +138,14 @@
           <!-- ── WINDOWS ── -->
           <div id="panel-windows" style="display:none">
             <form id="form-windows">
+              <div class="alert py-2 px-3 mb-3" style="font-size:.8rem;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:#fcd34d">
+                <i class="bi bi-windows me-2"></i><strong>Requisiti sul server Windows:</strong>
+                WinRM deve essere abilitato. Da PowerShell <strong>come amministratore</strong>:<br>
+                <code>winrm quickconfig -y</code><br>
+                <code>Set-Item WSMan:\localhost\Service\Auth\Basic $true</code><br>
+                <code>Set-Item WSMan:\localhost\Service\AllowUnencrypted $true</code><br>
+                Per backup bare-metal (tipo Completo): configurare anche la <strong>Share SMB</strong> sulla destinazione e abilitare <strong>Win/Mac/NFS</strong> sul QNAP.
+              </div>
               <div class="row g-3">
                 <div class="col-md-6">
                   <label class="form-label">Nome sorgente</label>
@@ -219,9 +233,12 @@
           <!-- ── VMWARE ── -->
           <div id="panel-vmware" style="display:none">
             <form id="form-vmware">
-              <div class="alert alert-secondary py-2 mb-3" style="font-size:.83rem">
-                <i class="bi bi-info-circle me-1"></i>
-                Configura prima un <strong>host ESXi</strong> nella sezione qui sotto, poi seleziona la VM da proteggere.
+              <div class="alert py-2 px-3 mb-3" style="font-size:.8rem;background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.25);color:#fcd34d">
+                <i class="bi bi-cloud-haze2 me-2"></i><strong>Requisiti sull'host ESXi:</strong>
+                Accesso API vSphere abilitato (porta 443 HTTPS). Credenziali con ruolo <strong>Read-only</strong> minimo (consigliato <strong>Administrator</strong> per snapshot).
+                Con licenza <strong>ESXi Free</strong>: snapshot e ExportVm non disponibili — il sistema usa automaticamente il download diretto dal datastore (funziona comunque).<br>
+                Configura prima l'host ESXi qui sotto, poi seleziona la VM.
+              </div>
               </div>
               <div class="row g-3">
                 <div class="col-md-5">
@@ -313,9 +330,13 @@
           <!-- ── XCP-ng ── -->
           <div id="panel-xcpng" style="display:none">
             <form id="form-xcpng">
-              <div class="alert alert-secondary py-2 mb-3" style="font-size:.83rem">
-                <i class="bi bi-info-circle me-1"></i>
-                Configura prima un <strong>host XCP-ng</strong> nella sezione qui sotto, poi seleziona la VM da proteggere.
+              <div class="alert py-2 px-3 mb-3" style="font-size:.8rem;background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.25);color:#c4b5fd">
+                <i class="bi bi-cpu me-2"></i><strong>Requisiti sull'host XCP-ng:</strong>
+                XAPI abilitato (sempre attivo di default su XCP-ng, porta 443 HTTPS).
+                Credenziali con ruolo <strong>Pool Admin</strong> o <strong>VM Admin</strong>.
+                Il backup esporta la VM in formato <strong>XVA</strong> con streaming diretto verso il NAS — nessun disco locale usato.
+                Configura prima l'host XCP-ng qui sotto, poi seleziona la VM.
+              </div>
               </div>
               <div class="row g-3">
                 <div class="col-md-5">

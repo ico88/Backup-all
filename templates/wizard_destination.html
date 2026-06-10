@@ -67,6 +67,12 @@
             </div>
 
             <div id="rsync-fields">
+              <div class="alert alert-info py-2 px-3 mb-3" style="font-size:.8rem;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25);color:#93c5fd">
+                <i class="bi bi-info-circle me-2"></i><strong>Cosa abilitare sul QNAP:</strong>
+                Pannello di controllo → <strong>Servizi file → SSH</strong> → abilita SSH (porta 22).
+                L'utente deve avere accesso SSH: <strong>Utenti → modifica utente → Applicazioni → SSH</strong> → spunta.
+                Il percorso base (es. <code>/share/Backup</code>) deve esistere e l'utente deve avere permessi di scrittura sulla share.
+              </div>
               <div class="row g-3">
                 <div class="col-md-3">
                   <label class="form-label">Porta SSH</label>
@@ -84,6 +90,11 @@
             </div>
 
             <div id="api-fields" style="display:none">
+              <div class="alert alert-info py-2 px-3 mb-3" style="font-size:.8rem;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25);color:#93c5fd">
+                <i class="bi bi-info-circle me-2"></i><strong>Cosa abilitare sul QNAP:</strong>
+                Pannello di controllo → <strong>Applicazioni → File Station</strong> → abilita.
+                L'API QTS usa la porta HTTP del QNAP (default 8080). Assicurati che l'utente abbia accesso a File Station.
+              </div>
               <div class="row g-3">
                 <div class="col-md-3">
                   <label class="form-label">Porta QTS</label>
@@ -107,9 +118,13 @@
             </div>
 
             <div class="mt-3">
-              <label class="form-label">Share SMB <span class="text-muted fw-normal">(opzionale — per backup bare-metal Windows)</span></label>
+              <label class="form-label">Share SMB <span class="text-muted fw-normal">(per backup bare-metal Windows)</span></label>
               <input class="form-control" id="f-smb-share" placeholder="Backup">
-              <div class="form-text">Nome della share SMB sul QNAP (es. <code>Backup</code>). Necessaria solo per wbadmin.</div>
+              <div class="form-text">
+                Nome della share SMB sul QNAP (es. <code>Backup</code> → il server Windows si collegherà a <code>\\192.168.x.x\Backup</code>).
+                <strong>Cosa abilitare sul QNAP:</strong> Pannello di controllo → <strong>Servizi file → Win/Mac/NFS → Microsoft Networking</strong> → abilita.
+                La share deve avere i permessi di lettura/scrittura per l'utente specificato.
+              </div>
             </div>
 
             <div class="mt-3">
