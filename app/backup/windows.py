@@ -124,3 +124,62 @@ def backup_mssql(server, dest_dir: str, log_fn=None) -> str:
     if log_fn:
         log_fn(f"Salvato {local_bak} ({len(bak_data):,} bytes)")
     return local_bak
+
+
+def backup_system_wbadmin(server, dest_cfg, timestamp: str, log_fn=None) -> None:
+    """
+    Backup completo bare-metal Windows via wbadmin direttamente su share SMB del QNAP.
+    Il server Windows deve poter raggiungere la share SMB: \\\\<host>\\<smb_share>.
+    """
+    smb_share = dest_cfg.smb_share
+    if not smb_share:
+        raise ValueError("smb_share non configurato nella destinazione")
+
+    smb_user = dest_cfg.username or ""
+    from app.crypto import decrypt as _decrypt
+    smb_password = _decrypt(dest_cfg.password_enc) if dest_cfg.password_enc else ""
+
+    unc_base = f"\\\\{dest_cfg.host}\\{smb_share}"
+    backup_target = f"{unc_base}\\{server.name}\\{timestamp}"
+
+    # Mappa drive temporaneo per la share (wbadmin accetta sia UNC che drive lettera)
+    # Usiamo direttamente il path UNC con sottocartella server/timestamp
+    ps_cmd = f"""
+$ErrorActionPreference = 'Stop'
+$uncBase = '{unc_base}'
+$backupTarget = '{backup_target}'
+
+# Connetti la share SMB se le credenziali sono fornite
+{f'net use $uncBase /user:"{smb_user}" "{smb_password}" /persistent:no | Out-Null' if smb_user else '# nessuna credenziale SMB'}
+
+# Crea la cartella di destinazione
+New-Item -ItemType Directory -Path $backupTarget -Force | Out-Null
+
+# Esegui wbadmin
+$output = & wbadmin start backup -backupTarget:$backupTarget -include:C: -allCritical -quiet 2>&1
+$rc = $LASTEXITCODE
+Write-Output $output
+if ($rc -eq 0) {{
+    Write-Output 'WBADMIN_OK'
+}} else {{
+    Write-Output "WBADMIN_FAIL:$rc"
+}}
+
+{f'net use $uncBase /delete /yes | Out-Null' if smb_user else ''}
+"""
+
+    if log_fn:
+        log_fn(f"Avvio backup sistema Windows verso {backup_target} ...")
+
+    session = _get_session(server)
+    result = session.run_ps(ps_cmd)
+    output = result.std_out.decode(errors="replace")
+    stderr = result.std_err.decode(errors="replace")
+
+    if log_fn and output.strip():
+        for line in output.strip().splitlines():
+            log_fn(f"wbadmin: {line}")
+
+    if "WBADMIN_OK" not in output:
+        err_detail = stderr.strip() or output[-500:]
+        raise RuntimeError(f"wbadmin fallito: {err_detail}")

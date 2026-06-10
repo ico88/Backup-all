@@ -72,12 +72,28 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
                 log("Rimozione snapshot temporaneo...")
                 vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)
 
+        # ── BACKUP SISTEMA WINDOWS (bare-metal wbadmin) ──────────
+        from app.models import ServerType
+        if (job.backup_type == BackupType.FULL
+                and server.server_type == ServerType.WINDOWS
+                and dest_cfg.smb_share):
+            log("Backup sistema Windows via wbadmin (bare-metal)...")
+            windows.backup_system_wbadmin(server, dest_cfg, timestamp, log)
+            # wbadmin scrive direttamente sulla share: salta il trasferimento normale
+            run.status = RunStatus.SUCCESS
+            run.backup_path = f"{server.name}/{timestamp}"
+            run.finished_at = datetime.now(timezone.utc)
+            job.last_run_at = run.finished_at
+            job.last_run_status = RunStatus.SUCCESS
+            db.commit()
+            log("Backup sistema Windows completato.")
+            return run
+
         # ── DATI APPLICATIVI ─────────────────────────────────────
         if job.backup_type in (BackupType.APP_DATA, BackupType.FULL):
             app_dir = os.path.join(tmp_dir, "app_data")
             os.makedirs(app_dir)
 
-            from app.models import ServerType
             if server.server_type == ServerType.LINUX:
                 log("Backup dati Linux...")
                 linux.backup_app_data(server, app_dir, log)

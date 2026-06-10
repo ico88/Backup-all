@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ==============================================================================
 #  Backup-All — Installer per Ubuntu Server
-
+#  CRI Catania
 # ==============================================================================
 set -euo pipefail
 
@@ -26,7 +26,7 @@ echo "  ██╔══██╗██╔══██║██║     ██╔�
 echo "  ██████╔╝██║  ██║╚██████╗██║  ██╗╚██████╔╝██║          ██║  ██║███████╗███████╗"
 echo "  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝ ╚═════╝ ╚═╝          ╚═╝  ╚═╝╚══════╝╚══════╝"
 echo -e "${NC}"
-echo -e "  ${DIM}Soluzione di backup unificata${NC}"
+echo -e "  ${DIM}Soluzione di backup unificata — CRI Catania${NC}"
 echo -e "  ${DIM}────────────────────────────────────────────${NC}\n"
 
 # ── Root check ────────────────────────────────────────
@@ -185,26 +185,18 @@ ok "Permessi impostati"
 # ══════════════════════════════════════════════════════
 step "5/6" "Configurazione servizio systemd"
 
-# File .env — genera chiave Fernet se non già presente
-if [[ -f "${INSTALL_DIR}/.env" ]] && grep -q "^BACKUP_SECRET_KEY=" "${INSTALL_DIR}/.env" 2>/dev/null; then
-    ok "Chiave di cifratura esistente preservata"
-else
-    FERNET_KEY=$("${INSTALL_DIR}/.venv/bin/python" -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-    cat > "${INSTALL_DIR}/.env" << EOF
+# File .env
+cat > "${INSTALL_DIR}/.env" << EOF
 PORT=${APP_PORT}
 DEV=false
-BACKUP_SECRET_KEY=${FERNET_KEY}
 EOF
-    ok "Chiave di cifratura generata"
-fi
 chown "${SERVICE_USER}:${SERVICE_USER}" "${INSTALL_DIR}/.env"
-chmod 640 "${INSTALL_DIR}/.env"
-ok "File .env configurato (porta: ${APP_PORT})"
+ok "File .env creato"
 
 # Unit file systemd
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" << EOF
 [Unit]
-Description=Backup-All
+Description=Backup-All — CRI Catania
 Documentation=https://github.com/ico88/Backup-all
 After=network.target
 Wants=network-online.target

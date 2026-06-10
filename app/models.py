@@ -112,6 +112,7 @@ class BackupDestination(Base):
     password_enc = Column(Text)
     base_path = Column(String(500), nullable=False)
     rsync_module = Column(String(100))
+    smb_share = Column(String(200))
     max_retention_days = Column(Integer, default=30)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

@@ -26,3 +26,20 @@ def get_db():
 def init_db():
     from app import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    _migrate()
+
+
+def _migrate():
+    """Aggiunge colonne mancanti per aggiornamenti incrementali."""
+    with engine.connect() as conn:
+        migrations = [
+            ("backup_destinations", "smb_share", "VARCHAR(200)"),
+        ]
+        for table, column, col_type in migrations:
+            try:
+                conn.execute(__import__("sqlalchemy").text(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"
+                ))
+                conn.commit()
+            except Exception:
+                pass  # colonna già esistente

@@ -13,13 +13,14 @@ router = APIRouter(prefix="/api/destinations", tags=["destinations"])
 class DestinationCreate(BaseModel):
     name: str
     description: Optional[str] = None
-    dest_type: str
+    dest_type: str   # "rsync", "qnap_api"
     host: str
     port: Optional[int] = None
     username: Optional[str] = None
     password: Optional[str] = None
     base_path: str
     rsync_module: Optional[str] = None
+    smb_share: Optional[str] = None
     max_retention_days: int = 30
 
 
@@ -38,33 +39,13 @@ def create_destination(data: DestinationCreate, db: Session = Depends(get_db)):
         password_enc=encrypt(data.password) if data.password else None,
         base_path=data.base_path,
         rsync_module=data.rsync_module,
+        smb_share=data.smb_share,
         max_retention_days=data.max_retention_days,
     )
     db.add(d)
     db.commit()
     db.refresh(d)
     return {"id": d.id, "name": d.name}
-
-
-@router.put("/{dest_id}")
-def update_destination(dest_id: int, data: DestinationCreate, db: Session = Depends(get_db)):
-    d = db.get(BackupDestination, dest_id)
-    if not d:
-        raise HTTPException(404, "Destinazione non trovata")
-    d.name = data.name
-    d.description = data.description
-    d.dest_type = data.dest_type
-    d.host = data.host
-    d.port = data.port
-    d.username = data.username
-    if data.password:
-        d.password_enc = encrypt(data.password)
-    d.base_path = data.base_path
-    d.rsync_module = data.rsync_module
-    d.max_retention_days = data.max_retention_days
-    db.commit()
-    db.refresh(d)
-    return _serialize(d)
 
 
 @router.post("/{dest_id}/test")
@@ -120,6 +101,27 @@ def test_destination(dest_id: int, db: Session = Depends(get_db)):
     raise HTTPException(500, f"SSH error (rc={result.returncode}): {stderr[:300] or 'nessun output'}")
 
 
+@router.put("/{dest_id}")
+def update_destination(dest_id: int, data: DestinationCreate, db: Session = Depends(get_db)):
+    d = db.get(BackupDestination, dest_id)
+    if not d:
+        raise HTTPException(404, "Destinazione non trovata")
+    d.name = data.name
+    d.description = data.description
+    d.dest_type = data.dest_type
+    d.host = data.host
+    d.port = data.port
+    d.username = data.username
+    d.base_path = data.base_path
+    d.rsync_module = data.rsync_module
+    d.smb_share = data.smb_share
+    d.max_retention_days = data.max_retention_days
+    if data.password:
+        d.password_enc = encrypt(data.password)
+    db.commit()
+    return {"ok": True}
+
+
 @router.delete("/{dest_id}")
 def delete_destination(dest_id: int, db: Session = Depends(get_db)):
     d = db.get(BackupDestination, dest_id)
@@ -135,5 +137,6 @@ def _serialize(d: BackupDestination) -> dict:
         "id": d.id, "name": d.name, "description": d.description,
         "dest_type": d.dest_type, "host": d.host, "port": d.port,
         "username": d.username, "base_path": d.base_path,
+        "rsync_module": d.rsync_module, "smb_share": d.smb_share,
         "max_retention_days": d.max_retention_days, "is_active": d.is_active,
     }

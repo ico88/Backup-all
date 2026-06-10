@@ -13,7 +13,7 @@ def rsync_to_qnap(dest_cfg, local_path: str, remote_subpath: str, log_fn=None) -
     """
     Invia local_path al QNAP via rsync over SSH.
     dest_cfg: BackupDestination model instance.
-    remote_subpath: es. "server-01/2024-01-15"
+    remote_subpath: es. "windows_gamma/2024-01-15"
     Ritorna byte trasferiti.
     """
     password = decrypt(dest_cfg.password_enc) if dest_cfg.password_enc else ""
@@ -176,7 +176,7 @@ def compute_remote_checksum(dest_cfg, remote_path: str) -> str | None:
 def apply_retention(dest_cfg, remote_base: str, retention_days: int, log_fn=None):
     """
     Rimuove backup più vecchi di retention_days giorni via SSH sul QNAP.
-    remote_base: percorso base sul QNAP (es. /backup/server-01)
+    remote_base: percorso base sul QNAP (es. /backup/windows_gamma)
     """
     if not retention_days:
         return
