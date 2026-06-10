@@ -2,6 +2,11 @@
 {% block title %}Storico Backup{% endblock %}
 
 {% block content %}
+<style>
+  #runs-tbody td, #runs-tbody tr,
+  .table thead th { color: #fff !important; }
+  .table tbody tr { --bs-table-color: #fff; --bs-table-striped-color: #fff; }
+</style>
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div class="page-title"><i class="bi bi-clock-history me-2" style="color:var(--cri-red)"></i>Storico Esecuzioni</div>
   <select class="form-select form-select-sm w-auto" id="filter-job" onchange="loadRuns()" style="background:#1a1d24;border-color:var(--card-border);color:var(--text-primary);min-width:200px">
