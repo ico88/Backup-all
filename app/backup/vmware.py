@@ -288,8 +288,7 @@ def stream_vm_to_remote(host_cfg, vm_name: str, dest_cfg, remote_path: str, log_
         ssh_opts = [
             "-p", str(qnap_port),
             "-o", "StrictHostKeyChecking=no",
-            "-o", "LogLevel=ERROR",        # sopprime warning post-quantum e simili
-            "-o", "BatchMode=yes",
+            "-o", "LogLevel=ERROR",
         ]
         ssh_pre = ["sshpass", "-e", "ssh"] if qnap_pass else ["ssh"]
         ssh_pre += ssh_opts + [f"{qnap_user}@{qnap_host}"]
