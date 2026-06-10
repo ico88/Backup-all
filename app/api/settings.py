@@ -81,7 +81,7 @@ def test_smtp(request: Request, db: Session = Depends(get_db)):
     email = user.email or "test@example.com"
     from app.notifications import send_email
     try:
-        send_email(db, email, "Test SMTP — Backup-All CRI Catania",
+        send_email(db, email, "Test SMTP — Backup-All",
                    "Se ricevi questa email, la configurazione SMTP è corretta.")
         return {"ok": True, "message": f"Email di test inviata a {email}"}
     except Exception as e:
