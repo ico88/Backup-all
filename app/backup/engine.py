@@ -11,6 +11,19 @@ from app.models import BackupJob, BackupRun, BackupLog, BackupType, RunStatus
 from app.backup import vmware, linux, windows, qnap
 
 
+def _export_vm(host_cfg, vm_name: str, dest_dir: str, log_fn):
+    """Export OVF: prova pyvmomi, fallback automatico su ovftool per ESXi Free."""
+    try:
+        vmware.export_vm_ovf(host_cfg, vm_name, dest_dir, log_fn)
+    except Exception as e:
+        err = str(e)
+        if "RestrictedVersion" in err or "Current license" in err:
+            log_fn("ESXi licenza Free — API export non disponibile, uso ovftool...", "WARNING")
+            vmware.export_vm_ovf_ovftool(host_cfg, vm_name, dest_dir, log_fn)
+        else:
+            raise
+
+
 def _log(db: Session, run: BackupRun, message: str, level: str = "INFO"):
     entry = BackupLog(run_id=run.id, message=message, level=level)
     db.add(entry)
@@ -78,7 +91,7 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
                     else:
                         raise
                 log("Export OVF in corso (può richiedere diversi minuti)...")
-                vmware.export_vm_ovf(server.vmware_host, server.vm_name, vm_dir, log)
+                _export_vm(server.vmware_host, server.vm_name, vm_dir, log)
                 if snap_created:
                     log("Rimozione snapshot temporaneo...")
                     vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)
@@ -102,7 +115,7 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
                         else:
                             raise
                     log("Export VM OVF...")
-                    vmware.export_vm_ovf(server.vmware_host, server.vm_name, vm_dir, log)
+                    _export_vm(server.vmware_host, server.vm_name, vm_dir, log)
                     if snap_created:
                         log("Rimozione snapshot temporaneo...")
                         vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)

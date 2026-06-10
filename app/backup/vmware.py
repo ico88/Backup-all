@@ -146,6 +146,66 @@ def export_vm_ovf(host_cfg, vm_name: str, dest_dir: str, log_fn=None) -> str:
         Disconnect(si)
 
 
+def export_vm_ovf_ovftool(host_cfg, vm_name: str, dest_dir: str, log_fn=None) -> str:
+    """
+    Esporta la VM come OVF usando ovftool — compatibile con ESXi Free License.
+    Fallback quando le API pyvmomi (ExportVm) sono bloccate dalla licenza.
+    """
+    import shutil, subprocess, urllib.parse
+    from app.crypto import decrypt
+
+    candidates = [
+        "/usr/lib/vmware-ovftool/ovftool",
+        "/usr/bin/ovftool",
+        "/opt/vmware/ovftool/ovftool",
+    ]
+    ovftool_bin = next((p for p in candidates if os.path.isfile(p)), None) or shutil.which("ovftool")
+    if not ovftool_bin:
+        raise RuntimeError(
+            "ovftool non trovato. Installalo da https://developer.vmware.com/web/tool/ovf-tool "
+            "oppure esegui: bash /opt/backup-all/install_ovftool.sh"
+        )
+
+    password = decrypt(host_cfg.password_enc)
+    user_enc = urllib.parse.quote(host_cfg.username, safe="")
+    pass_enc = urllib.parse.quote(password, safe="")
+    vm_enc   = urllib.parse.quote(vm_name, safe="")
+    port     = host_cfg.port or 443
+    src_url  = f"vi://{user_enc}:{pass_enc}@{host_cfg.host}:{port}/{vm_enc}"
+
+    os.makedirs(dest_dir, exist_ok=True)
+    ovf_out = os.path.join(dest_dir, f"{vm_name}.ovf")
+
+    cmd = [
+        ovftool_bin,
+        "--noSSLVerify",
+        "--acceptAllEulas",
+        "--skipManifestCheck",
+        "--overwrite",
+        src_url,
+        ovf_out,
+    ]
+    if log_fn:
+        safe = f"vi://{user_enc}:***@{host_cfg.host}:{port}/{vm_enc}"
+        log_fn(f"ovftool export: {safe} → {ovf_out}")
+
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    output_lines = []
+    for line in proc.stdout:
+        line = line.rstrip()
+        output_lines.append(line)
+        if log_fn and line:
+            log_fn(f"ovftool: {line}")
+    proc.wait()
+    if proc.returncode != 0:
+        tail = "\n".join(output_lines[-20:])
+        raise RuntimeError(f"ovftool export fallito (rc={proc.returncode}):\n{tail}")
+
+    if log_fn:
+        log_fn(f"Export VM '{vm_name}' completato via ovftool in {dest_dir}")
+    return dest_dir
+
+
 def list_vms(host_cfg) -> list[dict]:
     """Restituisce lista VM sull'host ESXi."""
     si = _connect(host_cfg)
