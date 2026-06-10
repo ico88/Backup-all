@@ -12,16 +12,27 @@ from app.backup import vmware, linux, windows, qnap
 
 
 def _export_vm(host_cfg, vm_name: str, dest_dir: str, log_fn):
-    """Export OVF: prova pyvmomi, fallback automatico su ovftool per ESXi Free."""
+    """
+    Export VM con fallback automatico per ESXi Free License:
+    1. Prova API pyvmomi ExportVm (richiede licenza)
+    2. Se RestrictedVersion → download diretto dal datastore HTTPS (funziona su Free)
+    3. Se datastore download fallisce → prova ovftool (se installato)
+    """
     try:
         vmware.export_vm_ovf(host_cfg, vm_name, dest_dir, log_fn)
+        return
     except Exception as e:
-        err = str(e)
-        if "RestrictedVersion" in err or "Current license" in err:
-            log_fn("ESXi licenza Free — API export non disponibile, uso ovftool...", "WARNING")
-            vmware.export_vm_ovf_ovftool(host_cfg, vm_name, dest_dir, log_fn)
-        else:
+        if "RestrictedVersion" not in str(e) and "Current license" not in str(e):
             raise
+        log_fn("ESXi licenza Free — API export non disponibile, uso download datastore diretto...", "WARNING")
+
+    try:
+        vmware.export_vm_datastore(host_cfg, vm_name, dest_dir, log_fn)
+        return
+    except Exception as e2:
+        log_fn(f"Download datastore fallito: {e2} — provo ovftool...", "WARNING")
+
+    vmware.export_vm_ovf_ovftool(host_cfg, vm_name, dest_dir, log_fn)
 
 
 def _log(db: Session, run: BackupRun, message: str, level: str = "INFO"):

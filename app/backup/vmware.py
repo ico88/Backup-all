@@ -2,6 +2,7 @@
 import os
 import ssl
 import time
+import urllib.parse
 import requests
 from pyVim.connect import SmartConnect, Disconnect
 from pyVmomi import vim
@@ -141,6 +142,90 @@ def export_vm_ovf(host_cfg, vm_name: str, dest_dir: str, log_fn=None) -> str:
         lease.HttpNfcLeaseComplete()
         if log_fn:
             log_fn(f"Export VM '{vm_name}' completato in {dest_dir}")
+        return dest_dir
+    finally:
+        Disconnect(si)
+
+
+def export_vm_datastore(host_cfg, vm_name: str, dest_dir: str, log_fn=None) -> str:
+    """
+    Scarica i file della VM direttamente dall'HTTPS datastore di ESXi.
+    Funziona su ESXi Free License — non usa API NFC né ExportVm.
+    Scarica: .vmx, .vmdk (descrittore), -flat.vmdk (dati disco), .nvram
+    """
+    si = _connect(host_cfg)
+    try:
+        vm = _find_vm(si, vm_name)
+        if not vm:
+            raise ValueError(f"VM '{vm_name}' non trovata su ESXi")
+
+        # Ricava datastore e percorso cartella dalla config VM
+        # vmPathName è tipo "[datastore1] vm-name/vm-name.vmx"
+        vm_path = vm.config.files.vmPathName
+        ds_name = vm_path.split("]")[0].lstrip("[")
+        vm_folder = vm_path.split("] ")[1].rsplit("/", 1)[0]
+
+        if log_fn:
+            log_fn(f"Datastore: {ds_name}, cartella VM: {vm_folder}")
+
+        # Elenca i file nella cartella VM via API (lettura — consentita su Free)
+        content = si.RetrieveContent()
+        search_spec = vim.host.DatastoreBrowser.SearchSpec()
+        search_spec.matchPattern = ["*.vmx", "*.vmdk", "*.nvram", "*.vmsd"]
+
+        # Trova il datastore
+        ds_obj = None
+        for ds in content.rootFolder.childEntity[0].datastore:
+            if ds.name == ds_name:
+                ds_obj = ds
+                break
+        if not ds_obj:
+            raise ValueError(f"Datastore '{ds_name}' non trovato")
+
+        browser = ds_obj.browser
+        ds_path = f"[{ds_name}] {vm_folder}"
+        task = browser.SearchDatastore_Task(datastorePath=ds_path, searchSpec=search_spec)
+        _wait_task(task, None)
+        results = task.info.result
+
+        if not results or not results.file:
+            raise ValueError(f"Nessun file trovato in {ds_path}")
+
+        os.makedirs(dest_dir, exist_ok=True)
+        from app.crypto import decrypt
+        password = decrypt(host_cfg.password_enc)
+        port = host_cfg.port or 443
+        base_url = f"https://{host_cfg.host}:{port}"
+
+        session = requests.Session()
+        session.verify = host_cfg.ssl_verify
+        # Autentica la sessione con cookie vSphere (lettura file — consentita su Free)
+        cookie_val = si._stub.cookie
+        if '"' in cookie_val:
+            cookie_val = cookie_val.split('"')[1]
+        session.cookies.set("vmware_soap_session", cookie_val)
+
+        total_files = len(results.file)
+        for idx, f in enumerate(results.file, 1):
+            fname = f.path
+            # Salta i -flat.vmdk se il descrittore .vmdk è già nella lista
+            # (i -flat.vmdk vengono inclusi automaticamente come file separati)
+            encoded_path = urllib.parse.quote(f"{vm_folder}/{fname}")
+            url = f"{base_url}/folder/{encoded_path}?dcPath=ha-datacenter&dsName={urllib.parse.quote(ds_name)}"
+            dest_file = os.path.join(dest_dir, fname)
+
+            if log_fn:
+                size_mb = round(f.fileSize / 1024 / 1024, 1) if hasattr(f, 'fileSize') and f.fileSize else "?"
+                log_fn(f"Download [{idx}/{total_files}] {fname} ({size_mb} MB)...")
+
+            with session.get(url, stream=True, timeout=3600) as r:
+                r.raise_for_status()
+                with open(dest_file, "wb") as out:
+                    for chunk in r.iter_content(chunk_size=4 * 1024 * 1024):
+                        out.write(chunk)
+
+        if log_fn:
+            log_fn(f"Download VM '{vm_name}' completato in {dest_dir}")
         return dest_dir
     finally:
         Disconnect(si)
