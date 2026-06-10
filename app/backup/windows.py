@@ -154,13 +154,21 @@ def backup_system_wbadmin(server, dest_cfg, timestamp: str, log_fn=None) -> None
 $smbUser = '{smb_user_esc}'
 $smbPassword = '{smb_password_esc}'
 & cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
-$netUseArgs = @('use', $uncBase, $smbPassword, "/user:$smbUser", '/persistent:no')
+$credTarget = '{dest_cfg.host}'
+$cmdKeyOutput = & cmdkey.exe /add:$credTarget /user:$smbUser /pass:$smbPassword 2>&1
+if ($LASTEXITCODE -ne 0) {{
+    throw "Salvataggio credenziali SMB fallito ($LASTEXITCODE): $cmdKeyOutput"
+}}
+$netUseArgs = @('use', $uncBase, '/persistent:no')
 $netUseOutput = & net.exe @netUseArgs 2>&1
 if ($LASTEXITCODE -ne 0) {{
     throw "Connessione SMB fallita ($LASTEXITCODE): $netUseOutput"
 }}
 """
-        disconnect_block = '& cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"'
+        disconnect_block = f"""
+& cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
+& cmdkey.exe /delete:{dest_cfg.host} 2>$null | Out-Null
+"""
 
     ps_cmd = f"""
 $ErrorActionPreference = 'Stop'
