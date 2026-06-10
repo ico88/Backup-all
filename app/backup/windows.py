@@ -153,14 +153,14 @@ def backup_system_wbadmin(server, dest_cfg, timestamp: str, log_fn=None) -> None
         connect_block = f"""
 $smbUser = '{smb_user_esc}'
 $smbPassword = '{smb_password_esc}'
-& net.exe use $uncBase /delete /yes 2>$null | Out-Null
+& cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"
 $netUseArgs = @('use', $uncBase, $smbPassword, "/user:$smbUser", '/persistent:no')
 $netUseOutput = & net.exe @netUseArgs 2>&1
 if ($LASTEXITCODE -ne 0) {{
     throw "Connessione SMB fallita ($LASTEXITCODE): $netUseOutput"
 }}
 """
-        disconnect_block = "& net.exe use $uncBase /delete /yes 2>$null | Out-Null"
+        disconnect_block = '& cmd.exe /c "net use ""$uncBase"" /delete /yes >nul 2>nul"'
 
     ps_cmd = f"""
 $ErrorActionPreference = 'Stop'
