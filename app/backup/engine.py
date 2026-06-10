@@ -170,9 +170,15 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
                         vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)
 
             # ── BACKUP SISTEMA WINDOWS (bare-metal wbadmin) ──────────
-            if (job.backup_type == BackupType.FULL
-                    and server.server_type == ServerType.WINDOWS
-                    and dest_cfg.smb_share):
+            if job.backup_type == BackupType.FULL and server.server_type == ServerType.WINDOWS:
+                if not dest_cfg.smb_share:
+                    raise RuntimeError(
+                        "Backup Windows FULL richiede una Share SMB configurata sulla destinazione. "
+                        "Vai su Destinazioni → modifica la destinazione → compila il campo 'Share SMB' "
+                        f"con il nome della share sul NAS (es. 'Backup'). "
+                        f"Il NAS {dest_cfg.host} deve avere SMB/Samba abilitato e la share accessibile "
+                        f"dall'utente '{dest_cfg.username}'."
+                    )
                 log("Backup sistema Windows via wbadmin (bare-metal)...")
                 windows.backup_system_wbadmin(server, dest_cfg, timestamp, log)
                 run.status = RunStatus.SUCCESS
