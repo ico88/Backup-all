@@ -232,7 +232,8 @@ class BackupJob(Base):
     server = relationship("Server", back_populates="backup_jobs")
     destination = relationship("BackupDestination", back_populates="backup_jobs")
     runs = relationship("BackupRun", back_populates="job",
-                        order_by="BackupRun.started_at.desc()")
+                        order_by="BackupRun.started_at.desc()",
+                        cascade="all, delete-orphan")
 
 
 class BackupRun(Base):
@@ -252,7 +253,8 @@ class BackupRun(Base):
 
     job = relationship("BackupJob", back_populates="runs")
     logs = relationship("BackupLog", back_populates="run",
-                        order_by="BackupLog.timestamp")
+                        order_by="BackupLog.timestamp",
+                        cascade="all, delete-orphan")
 
 
 class BackupLog(Base):
