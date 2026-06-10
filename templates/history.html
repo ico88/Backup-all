@@ -82,7 +82,7 @@ async function loadRuns() {
         <a href="/logs/${r.id}" class="btn btn-icon btn-outline-secondary" title="Vedi log">
           <i class="bi bi-file-text"></i>
         </a>
-        ${r.status==='failed'?`<button class="btn btn-icon btn-outline-warning" title="Riprova backup" onclick="retryJob(${r.job_id},this)"><i class="bi bi-arrow-clockwise"></i></button>`:''}
+        ${r.status==='failed'?`<button class="btn btn-icon" style="border:1px solid #f59e0b;color:#fff;background:transparent" title="Riprova backup" onclick="retryJob(${r.job_id},this)"><i class="bi bi-arrow-clockwise"></i></button>`:''}
       </td>
     </tr>`).join('');
 }
