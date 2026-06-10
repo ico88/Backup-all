@@ -302,9 +302,12 @@ def stream_vm_to_remote(host_cfg, vm_name: str, dest_cfg, remote_path: str, log_
             env=_os_env, capture_output=True, text=True
         )
         if mkdir_res.returncode != 0:
+            err = (mkdir_res.stderr.strip() or mkdir_res.stdout.strip())
             raise RuntimeError(
-                f"Impossibile creare la directory sul QNAP '{remote_path}': "
-                f"{mkdir_res.stderr.strip() or mkdir_res.stdout.strip()}"
+                f"Impossibile creare '{remote_path}' sul QNAP: {err}\n"
+                f"→ Verifica che il percorso base '{dest_cfg.base_path}' esista sul NAS "
+                f"e che l'utente '{dest_cfg.username}' abbia permessi di scrittura. "
+                f"Vai su Destinazioni e correggi il Percorso base."
             )
 
         total = len(files)
