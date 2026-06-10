@@ -155,6 +155,25 @@ def test_server(server_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Server non trovato")
 
     from app.models import ServerType
+    if s.server_type == ServerType.VMWARE:
+        if not s.vmware_host_id:
+            raise HTTPException(400, "Nessun host VMware associato a questa sorgente")
+        from app.models import VMwareHost as VH
+        host = db.get(VH, s.vmware_host_id)
+        if not host:
+            raise HTTPException(404, "Host VMware non trovato nel DB")
+        try:
+            from app.backup.vmware import list_vms
+            vms = list_vms(host)
+            vm_names = [v["name"] for v in vms]
+            if s.vm_name and s.vm_name not in vm_names:
+                raise HTTPException(500, f"VM '{s.vm_name}' non trovata su {host.host}. VM disponibili: {', '.join(vm_names[:5])}")
+            return {"ok": True, "message": f"Connessione a ESXi {host.host} riuscita — {len(vms)} VM trovate ✓"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Errore connessione ESXi {host.host}: {e}")
+
     if s.server_type == ServerType.WINDOWS:
         port = s.winrm_port or 5985
         try:
@@ -226,6 +245,7 @@ def _serialize(s: Server) -> dict:
         "ssh_port": s.ssh_port, "winrm_port": s.winrm_port,
         "username": s.username,
         "vm_name": s.vm_name, "vmware_host_id": s.vmware_host_id,
+        "vmware_host_name": s.vmware_host.name if s.vmware_host else None,
         "app_name": s.app_name,
         "app_data_paths": json.loads(s.app_data_paths or "[]"),
         "app_db_type": s.app_db_type, "app_db_name": s.app_db_name,

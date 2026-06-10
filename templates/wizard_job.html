@@ -21,15 +21,16 @@
           <div class="row g-3">
             <div class="col-md-6">
               <label class="form-label">Nome Job</label>
-              <input class="form-control" id="f-name" placeholder="Es. Backup notte Gamma" required>
+              <input class="form-control" id="f-name" placeholder="Es. Backup notte server principale" required>
             </div>
             <div class="col-md-6">
               <label class="form-label">Tipo di Backup</label>
               <select class="form-select" id="f-type" required>
-                <option value="full">Completo — VM Snapshot + Dati App</option>
+                <option value="full">Completo</option>
                 <option value="vm_snapshot">Solo VM (snapshot OVF)</option>
                 <option value="app_data">Solo Dati Applicativi + DB</option>
               </select>
+              <div class="mt-1" id="type-hint" style="font-size:.75rem;color:var(--text-muted)"></div>
             </div>
             <div class="col-md-6">
               <label class="form-label">Sorgente</label>
@@ -162,10 +163,11 @@ const destsData = {};
 async function loadSelects() {
   const [servers, dests] = await Promise.all([api('GET','/api/servers'), api('GET','/api/destinations')]);
   const ss = document.getElementById('f-server');
+  const typeLabels = { linux: 'Linux', windows: 'Windows', vmware: 'VMware' };
   servers.forEach(s=>{
     serversData[s.id] = s;
     const o=document.createElement('option'); o.value=s.id;
-    o.textContent=`${s.name} (${s.server_type==='windows'?'Windows':'Linux'})`;
+    o.textContent=`${s.name} (${typeLabels[s.server_type]||s.server_type})`;
     ss.appendChild(o);
   });
   const ds = document.getElementById('f-dest');
@@ -186,8 +188,29 @@ async function loadSelects() {
 document.getElementById('f-server').addEventListener('change', function() {
   const s = serversData[this.value];
   const info = document.getElementById('server-info');
-  if (s) info.textContent = `IP: ${s.ip_address||'—'} · ${s.server_type} · VM: ${s.vm_name||'—'}`;
-  else info.textContent='';
+  const typeEl = document.getElementById('f-type');
+  const hint = document.getElementById('type-hint');
+  if (!s) { info.textContent=''; return; }
+
+  if (s.server_type === 'vmware') {
+    info.textContent = `Host ESXi: ${s.vmware_host_name||'—'} · VM: ${s.vm_name||'—'}`;
+    // VMware: solo snapshot OVF
+    typeEl.innerHTML = `<option value="vm_snapshot">Snapshot OVF (backup completo VM)</option>`;
+    hint.textContent = 'Sorgente VMware: esegue snapshot e salva il file OVF sul QNAP.';
+  } else if (s.server_type === 'windows') {
+    info.textContent = `IP: ${s.ip_address||'—'} · Porta WinRM: ${s.winrm_port||5985}`;
+    typeEl.innerHTML = `
+      <option value="full">Completo — wbadmin bare-metal + Dati App</option>
+      <option value="app_data">Solo Dati Applicativi + DB</option>`;
+    hint.textContent = s.app_name ? `App: ${s.app_name}` : '';
+  } else {
+    info.textContent = `IP: ${s.ip_address||'—'} · Porta SSH: ${s.ssh_port||22}`;
+    typeEl.innerHTML = `
+      <option value="app_data">Dati Applicativi + DB</option>
+      <option value="full">Completo — App + Snapshot VM (se configurato)</option>
+      <option value="vm_snapshot">Solo VM Snapshot (se VMware configurato)</option>`;
+    hint.textContent = s.app_name ? `App: ${s.app_name}` : '';
+  }
 });
 
 document.getElementById('f-dest').addEventListener('change', function() {

@@ -55,42 +55,54 @@ def run_job(job_id: int, db: Session, triggered_by: str = "scheduler") -> Backup
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H-%M-%S")
         remote_subpath = f"{server.name}/{timestamp}"
 
-        # ── SNAPSHOT VM ──────────────────────────────────────────
-        if job.backup_type in (BackupType.VM_SNAPSHOT, BackupType.FULL):
-            if not server.vm_name or not server.vmware_host:
-                log("vm_name o vmware_host non configurati, skip snapshot", "WARNING")
-            else:
-                snap_name = f"backup_{timestamp}"
-                log(f"Creazione snapshot VMware '{snap_name}'...")
-                vmware.create_snapshot(server.vmware_host, server.vm_name, snap_name, log)
-
-                vm_dir = os.path.join(tmp_dir, "vm_export")
-                os.makedirs(vm_dir)
-                log("Export VM OVF...")
-                vmware.export_vm_ovf(server.vmware_host, server.vm_name, vm_dir, log)
-
-                log("Rimozione snapshot temporaneo...")
-                vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)
-
-        # ── BACKUP SISTEMA WINDOWS (bare-metal wbadmin) ──────────
         from app.models import ServerType
-        if (job.backup_type == BackupType.FULL
-                and server.server_type == ServerType.WINDOWS
-                and dest_cfg.smb_share):
-            log("Backup sistema Windows via wbadmin (bare-metal)...")
-            windows.backup_system_wbadmin(server, dest_cfg, timestamp, log)
-            # wbadmin scrive direttamente sulla share: salta il trasferimento normale
-            run.status = RunStatus.SUCCESS
-            run.backup_path = f"{server.name}/{timestamp}"
-            run.finished_at = datetime.now(timezone.utc)
-            job.last_run_at = run.finished_at
-            job.last_run_status = RunStatus.SUCCESS
-            db.commit()
-            log("Backup sistema Windows completato.")
-            return run
 
-        # ── DATI APPLICATIVI ─────────────────────────────────────
-        if job.backup_type in (BackupType.APP_DATA, BackupType.FULL):
+        # ── SORGENTE VMWARE: snapshot + OVF export ────────────────
+        if server.server_type == ServerType.VMWARE:
+            if not server.vm_name or not server.vmware_host:
+                raise ValueError("Sorgente VMware: vm_name o vmware_host non configurati")
+            snap_name = f"backup_{timestamp}"
+            log(f"Creazione snapshot VMware '{snap_name}'...")
+            vmware.create_snapshot(server.vmware_host, server.vm_name, snap_name, log)
+            vm_dir = os.path.join(tmp_dir, "vm_export")
+            os.makedirs(vm_dir)
+            log("Export OVF in corso (può richiedere diversi minuti)...")
+            vmware.export_vm_ovf(server.vmware_host, server.vm_name, vm_dir, log)
+            log("Rimozione snapshot temporaneo...")
+            vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)
+
+        else:
+            # ── SNAPSHOT opzionale per Linux/Windows su VMware ───────
+            if job.backup_type in (BackupType.VM_SNAPSHOT, BackupType.FULL):
+                if server.vm_name and server.vmware_host:
+                    snap_name = f"backup_{timestamp}"
+                    log(f"Creazione snapshot VMware '{snap_name}'...")
+                    vmware.create_snapshot(server.vmware_host, server.vm_name, snap_name, log)
+                    vm_dir = os.path.join(tmp_dir, "vm_export")
+                    os.makedirs(vm_dir)
+                    log("Export VM OVF...")
+                    vmware.export_vm_ovf(server.vmware_host, server.vm_name, vm_dir, log)
+                    log("Rimozione snapshot temporaneo...")
+                    vmware.remove_snapshot(server.vmware_host, server.vm_name, snap_name, log)
+
+            # ── BACKUP SISTEMA WINDOWS (bare-metal wbadmin) ──────────
+            if (job.backup_type == BackupType.FULL
+                    and server.server_type == ServerType.WINDOWS
+                    and dest_cfg.smb_share):
+                log("Backup sistema Windows via wbadmin (bare-metal)...")
+                windows.backup_system_wbadmin(server, dest_cfg, timestamp, log)
+                run.status = RunStatus.SUCCESS
+                run.backup_path = f"{server.name}/{timestamp}"
+                run.finished_at = datetime.now(timezone.utc)
+                job.last_run_at = run.finished_at
+                job.last_run_status = RunStatus.SUCCESS
+                db.commit()
+                log("Backup sistema Windows completato.")
+                return run
+
+        # ── DATI APPLICATIVI (solo Linux/Windows) ────────────────
+        if (server.server_type != ServerType.VMWARE
+                and job.backup_type in (BackupType.APP_DATA, BackupType.FULL)):
             app_dir = os.path.join(tmp_dir, "app_data")
             os.makedirs(app_dir)
 

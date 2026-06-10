@@ -10,6 +10,7 @@ from app.database import Base
 class ServerType(str, enum.Enum):
     WINDOWS = "windows"
     LINUX = "linux"
+    VMWARE = "vmware"
 
 
 class BackupType(str, enum.Enum):
