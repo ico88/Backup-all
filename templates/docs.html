@@ -1,472 +1,753 @@
 {% extends "base.html" %}
-{% block title %}Guida alla configurazione{% endblock %}
+{% block title %}Guida rapida{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-xl-9">
+<style>
+  /* ── Setup checklist ── */
+  .setup-step {
+    display: flex; align-items: center; gap: 1rem;
+    padding: 1rem 1.25rem; border-radius: 10px;
+    border: 1px solid var(--card-border);
+    background: var(--card-bg);
+    transition: border-color .2s;
+  }
+  .setup-step.done   { border-color: rgba(34,197,94,.35);  background: rgba(34,197,94,.04); }
+  .setup-step.todo   { border-color: rgba(229,57,53,.35);  background: rgba(229,57,53,.04); }
+  .setup-step.locked { opacity: .45; }
 
-    <div class="d-flex align-items-center gap-3 mb-4">
-      <div class="page-title"><i class="bi bi-book me-2" style="color:var(--cri-red)"></i>Guida alla configurazione</div>
-    </div>
+  .step-icon {
+    width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
+  }
+  .step-icon.done   { background: rgba(34,197,94,.15);  color: #4ade80; }
+  .step-icon.todo   { background: rgba(229,57,53,.15);  color: var(--cri-red); }
+  .step-icon.locked { background: rgba(107,114,128,.1); color: var(--text-muted); }
 
-    <!-- Indice -->
-    <div class="card mb-4">
-      <div class="card-body py-3">
-        <div class="d-flex flex-wrap gap-2">
-          <a href="#requisiti" class="btn btn-sm btn-outline-secondary">Requisiti</a>
-          <a href="#passo1" class="btn btn-sm btn-outline-secondary">1 · Sorgenti</a>
-          <a href="#passo2" class="btn btn-sm btn-outline-secondary">2 · Destinazioni</a>
-          <a href="#passo3" class="btn btn-sm btn-outline-secondary">3 · Job di backup</a>
-          <a href="#passo4" class="btn btn-sm btn-outline-secondary">4 · Replica VM</a>
-          <a href="#impostazioni" class="btn btn-sm btn-outline-secondary">Impostazioni</a>
-          <a href="#faq" class="btn btn-sm btn-outline-secondary">FAQ</a>
+  .step-body { flex: 1; min-width: 0; }
+  .step-title { font-weight: 600; font-size: .92rem; }
+  .step-desc  { font-size: .78rem; color: var(--text-muted); margin-top: .15rem; }
+  .step-count { font-size: .72rem; font-weight: 600; padding: .18rem .55rem; border-radius: 20px; }
+  .step-count.ok   { background: rgba(34,197,94,.12);  color: #4ade80; }
+  .step-count.warn { background: rgba(229,57,53,.12);  color: #f87171; }
+
+  /* ── Tip boxes ── */
+  .tip-box {
+    border-radius: 8px; padding: .75rem 1rem; font-size: .82rem;
+    display: flex; gap: .75rem; align-items: flex-start;
+  }
+  .tip-box.blue   { background:rgba(59,130,246,.08);  border:1px solid rgba(59,130,246,.2);  color:#93c5fd; }
+  .tip-box.green  { background:rgba(34,197,94,.08);   border:1px solid rgba(34,197,94,.2);   color:#86efac; }
+  .tip-box.yellow { background:rgba(245,158,11,.08);  border:1px solid rgba(245,158,11,.2);  color:#fcd34d; }
+  .tip-box.red    { background:rgba(239,68,68,.08);   border:1px solid rgba(239,68,68,.2);   color:#fca5a5; }
+  .tip-box i { flex-shrink: 0; font-size: 1rem; margin-top: .05rem; }
+
+  /* ── Detail section ── */
+  .detail-section { display: none; margin-top: 1.5rem; }
+  .detail-section.open { display: block; }
+
+  /* ── Flow connector ── */
+  .vline { width: 2px; height: 28px; background: var(--card-border); margin: 0 auto; }
+
+  /* ── Command block ── */
+  .cmd-block {
+    background: #0a0c10; border: 1px solid var(--card-border); border-radius: 7px;
+    padding: .6rem 1rem; font-family: monospace; font-size: .8rem; color: #c9d1d9;
+    display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+  }
+  .cmd-block .copy-btn {
+    cursor: pointer; color: var(--text-muted); flex-shrink: 0;
+    background: none; border: none; padding: 0; font-size: .9rem;
+    transition: color .15s;
+  }
+  .cmd-block .copy-btn:hover { color: var(--text-primary); }
+
+  /* ── Cron pill grid ── */
+  .cron-pill {
+    background: #131620; border: 1px solid var(--card-border); border-radius: 7px;
+    padding: .5rem .85rem; cursor: pointer; transition: border-color .15s;
+    font-size: .8rem;
+  }
+  .cron-pill:hover { border-color: rgba(229,57,53,.4); }
+  .cron-pill code { color: #fbbf24; }
+</style>
+
+<!-- Header -->
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <div>
+    <div class="page-title"><i class="bi bi-book me-2" style="color:var(--cri-red)"></i>Guida rapida</div>
+    <div class="text-muted mt-1" style="font-size:.8rem" id="guide-subtitle">Controllo configurazione in corso…</div>
+  </div>
+  <button class="btn btn-sm btn-outline-secondary" onclick="refreshStatus()">
+    <i class="bi bi-arrow-clockwise me-1"></i>Aggiorna stato
+  </button>
+</div>
+
+<!-- ══════════════════════════════════
+     SETUP CHECKLIST (stato live)
+════════════════════════════════════ -->
+<div class="row g-3 mb-4" id="checklist">
+
+  <!-- Step 1 — Sorgenti -->
+  <div class="col-12">
+    <div class="setup-step" id="step-servers" onclick="toggleDetail('servers')">
+      <div class="step-icon" id="si-servers"><i class="bi bi-hourglass-split"></i></div>
+      <div class="step-body">
+        <div class="d-flex align-items-center gap-2">
+          <span class="step-title">1 · Sorgenti</span>
+          <span class="step-count" id="sc-servers">…</span>
         </div>
+        <div class="step-desc" id="sd-servers">Server Linux, Windows o VMware da proteggere con il backup</div>
       </div>
+      <a href="/wizard/server" class="btn btn-sm btn-primary" onclick="event.stopPropagation()">
+        <i class="bi bi-plus me-1"></i>Aggiungi
+      </a>
+      <i class="bi bi-chevron-down text-muted" id="chev-servers" style="transition:transform .2s"></i>
     </div>
-
-    <!-- Panoramica -->
-    <div class="card mb-4">
-      <div class="card-header fw-semibold"><i class="bi bi-map me-2" style="color:var(--cri-red)"></i>Come funziona</div>
-      <div class="card-body">
-        <p class="text-muted mb-3">Il sistema lavora con tre blocchi fondamentali che si collegano tra loro:</p>
-        <div class="row g-3 text-center mb-3">
-          <div class="col-md-4">
-            <div class="p-3 rounded" style="background:rgba(229,57,53,.08);border:1px solid rgba(229,57,53,.2)">
-              <i class="bi bi-server fs-2 mb-2" style="color:var(--cri-red)"></i>
-              <div class="fw-semibold">Sorgente</div>
-              <small class="text-muted">Il server da proteggere<br>(Linux, Windows, VMware)</small>
-            </div>
-          </div>
-          <div class="col-md-4 d-flex align-items-center justify-content-center">
-            <div class="text-center">
-              <i class="bi bi-arrow-right fs-3 text-muted mb-2 d-block"></i>
-              <div class="p-3 rounded" style="background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2)">
-                <i class="bi bi-briefcase fs-2 mb-2" style="color:#fbbf24"></i>
-                <div class="fw-semibold">Job di Backup</div>
-                <small class="text-muted">Regola quando e come<br>eseguire il backup</small>
+    <div class="detail-section" id="detail-servers">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-3">
+                <div style="width:32px;height:32px;border-radius:7px;background:rgba(34,197,94,.15);color:#86efac;display:flex;align-items:center;justify-content:center"><i class="bi bi-terminal"></i></div>
+                <span class="fw-semibold">Linux</span>
               </div>
-              <i class="bi bi-arrow-right fs-3 text-muted mt-2 d-block"></i>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="p-3 rounded" style="background:rgba(74,139,87,.08);border:1px solid rgba(74,139,87,.2)">
-              <i class="bi bi-hdd-network fs-2 mb-2" style="color:#4ade80"></i>
-              <div class="fw-semibold">Destinazione</div>
-              <small class="text-muted">Il NAS/QNAP dove<br>salvare i dati</small>
-            </div>
-          </div>
-        </div>
-        <div class="alert-dark-info">
-          <i class="bi bi-lightbulb me-2"></i>
-          <strong>Ordine consigliato:</strong> configura prima le sorgenti, poi le destinazioni, infine crea i job che le collegano.
-        </div>
-      </div>
-    </div>
-
-    <!-- Requisiti -->
-    <div class="card mb-4" id="requisiti">
-      <div class="card-header fw-semibold"><i class="bi bi-check2-square me-2" style="color:var(--cri-red)"></i>Requisiti di sistema</div>
-      <div class="card-body">
-        <div class="row g-4">
-          <div class="col-md-4">
-            <h6 class="text-muted text-uppercase" style="font-size:.72rem;letter-spacing:.08em">Server Linux (sorgente)</h6>
-            <ul class="list-unstyled mb-0" style="font-size:.88rem">
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Accesso SSH (porta 22 di default)</li>
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Utente con permessi sudo (per dump DB)</li>
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i><code>mysqldump</code> o <code>pg_dump</code> installati se usi DB</li>
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i><code>sshpass</code> sul <em>server Backup-All</em> (non sulla sorgente)</li>
-            </ul>
-          </div>
-          <div class="col-md-4">
-            <h6 class="text-muted text-uppercase" style="font-size:.72rem;letter-spacing:.08em">Server Windows (sorgente)</h6>
-            <ul class="list-unstyled mb-0" style="font-size:.88rem">
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>WinRM abilitato (porta 5985)</li>
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Utente Administrator (o con delega WinRM)</li>
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Share SMB sul QNAP configurata (per wbadmin)</li>
-              <li class="mb-1"><i class="bi bi-info-circle text-warning me-2"></i>WinRM: <code>winrm quickconfig</code> + <code>Set-Item WSMan:\localhost\Client\TrustedHosts *</code></li>
-            </ul>
-          </div>
-          <div class="col-md-4">
-            <h6 class="text-muted text-uppercase" style="font-size:.72rem;letter-spacing:.08em">VMware ESXi (sorgente/replica)</h6>
-            <ul class="list-unstyled mb-0" style="font-size:.88rem">
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>ESXi raggiungibile su porta 443</li>
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Utente con permesso datastore + VM power</li>
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i><code>ovftool</code> installato su Backup-All (per replica)</li>
-              <li class="mb-1"><i class="bi bi-info-circle text-warning me-2"></i>Modalità manutenzione NON attiva sulla VM</li>
-            </ul>
-          </div>
-        </div>
-        <hr class="my-3">
-        <div class="row g-4">
-          <div class="col-md-6">
-            <h6 class="text-muted text-uppercase" style="font-size:.72rem;letter-spacing:.08em">Destinazione QNAP / NAS</h6>
-            <ul class="list-unstyled mb-0" style="font-size:.88rem">
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>SSH abilitato (metodo rsync — consigliato)</li>
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Cartella di destinazione creata e con permessi scrittura</li>
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Spazio sufficiente per il numero di copie configurate</li>
-            </ul>
-          </div>
-          <div class="col-md-6">
-            <h6 class="text-muted text-uppercase" style="font-size:.72rem;letter-spacing:.08em">Rete</h6>
-            <ul class="list-unstyled mb-0" style="font-size:.88rem">
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Backup-All deve raggiungere le sorgenti e le destinazioni</li>
-              <li class="mb-1"><i class="bi bi-check2 text-success me-2"></i>Le sorgenti <em>non</em> devono raggiungere Backup-All</li>
-              <li class="mb-1"><i class="bi bi-info-circle text-warning me-2"></i>Firewall: apri le porte SSH/WinRM verso Backup-All</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Passo 1 -->
-    <div class="card mb-4" id="passo1">
-      <div class="card-header fw-semibold">
-        <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem;font-size:1.1rem">1</span>
-        Configurare le sorgenti
-        <a href="/wizard/server" class="btn btn-sm btn-outline-danger ms-3">
-          <i class="bi bi-arrow-right me-1"></i>Vai alle sorgenti
-        </a>
-      </div>
-      <div class="card-body">
-
-        <!-- Linux -->
-        <div class="mb-4">
-          <h6><span class="badge me-2" style="background:#166534;color:#bbf7d0"><i class="bi bi-terminal me-1"></i>Linux</span></h6>
-          <ol style="font-size:.88rem" class="text-muted mb-2">
-            <li class="mb-1">Seleziona il tab <strong>Linux</strong></li>
-            <li class="mb-1">Inserisci IP, porta SSH (default 22), utente e password</li>
-            <li class="mb-1">Se vuoi fare backup di un'applicazione, compila la sezione <em>Dati applicazione</em>: nome app, tipo DB, percorsi dei dati</li>
-            <li class="mb-1">Clicca <strong>Testa connessione</strong> — verifca SSH prima di salvare</li>
-            <li class="mb-1">Clicca <strong>Salva sorgente Linux</strong></li>
-          </ol>
-          <div class="alert-dark-info" style="font-size:.82rem">
-            <i class="bi bi-info-circle me-1"></i>
-            Se usi autenticazione con chiave SSH invece che password, lascia la password vuota e assicurati che la chiave pubblica del server Backup-All sia in <code>~/.ssh/authorized_keys</code> sulla sorgente.
-          </div>
-        </div>
-
-        <!-- Windows -->
-        <div class="mb-4">
-          <h6><span class="badge me-2" style="background:#1e3a5f;color:#bae6fd"><i class="bi bi-windows me-1"></i>Windows</span></h6>
-          <ol style="font-size:.88rem" class="text-muted mb-2">
-            <li class="mb-1">Seleziona il tab <strong>Windows</strong></li>
-            <li class="mb-1">Inserisci IP, porta WinRM (default 5985), utente Administrator e password</li>
-            <li class="mb-1">Per il backup bare-metal tramite <code>wbadmin</code>, configura una share SMB nella <strong>destinazione</strong> (campo "Share SMB")</li>
-            <li class="mb-1">Clicca <strong>Testa connessione</strong> — verifica che la porta WinRM risponda</li>
-            <li class="mb-1">Clicca <strong>Salva sorgente Windows</strong></li>
-          </ol>
-          <div class="alert-dark-info" style="font-size:.82rem">
-            <i class="bi bi-info-circle me-1"></i>
-            Per abilitare WinRM su Windows Server: apri PowerShell come amministratore ed esegui <code>winrm quickconfig -y</code>. Se il firewall blocca la porta 5985, aggiungi la regola: <code>netsh advfirewall firewall add rule name="WinRM" protocol=TCP dir=in localport=5985 action=allow</code>
-          </div>
-        </div>
-
-        <!-- VMware -->
-        <div>
-          <h6><span class="badge me-2" style="background:#4a2c00;color:#fde68a"><i class="bi bi-cloud-haze2 me-1"></i>VMware</span></h6>
-          <ol style="font-size:.88rem" class="text-muted mb-2">
-            <li class="mb-1">Prima di tutto, aggiungi un <strong>host ESXi</strong> dalla sezione in fondo al tab VMware: inserisci IP host, porta (443), utente e password ESXi</li>
-            <li class="mb-1">Seleziona l'host ESXi dal menu a tendina — la lista delle VM si carica automaticamente</li>
-            <li class="mb-1">Seleziona la VM da proteggere</li>
-            <li class="mb-1">Clicca <strong>Testa connessione ESXi</strong> — verifica accesso pyvmomi all'host</li>
-            <li class="mb-1">Clicca <strong>Salva sorgente VMware</strong></li>
-          </ol>
-          <div class="alert-dark-info" style="font-size:.82rem">
-            <i class="bi bi-info-circle me-1"></i>
-            Il backup VMware produce un file OVF/OVA sul NAS. La VM viene messa in snapshot temporaneamente durante l'esportazione. La VM rimane accesa durante il processo (il backup è consistente a livello applicativo, non a caldo).
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- Passo 2 -->
-    <div class="card mb-4" id="passo2">
-      <div class="card-header fw-semibold">
-        <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem;font-size:1.1rem">2</span>
-        Configurare le destinazioni
-        <a href="/wizard/destination" class="btn btn-sm btn-outline-danger ms-3">
-          <i class="bi bi-arrow-right me-1"></i>Vai alle destinazioni
-        </a>
-      </div>
-      <div class="card-body">
-        <p class="text-muted mb-3" style="font-size:.88rem">Una destinazione è il NAS/QNAP dove vengono salvati i backup. Puoi avere più destinazioni e assegnare job diversi a ciascuna.</p>
-
-        <div class="row g-3 mb-4">
-          <div class="col-md-6">
-            <div class="p-3 rounded h-100" style="background:rgba(74,222,128,.06);border:1px solid rgba(74,222,128,.2)">
-              <div class="fw-semibold mb-2"><i class="bi bi-arrow-left-right me-2 text-success"></i>rsync over SSH <span class="badge bg-success ms-1">Consigliato</span></div>
-              <ul class="text-muted mb-0" style="font-size:.83rem">
-                <li>Trasferisce solo le differenze (incrementale)</li>
-                <li>Crittografato (SSH)</li>
-                <li>Funziona con qualsiasi NAS con SSH abilitato</li>
-                <li>Porta di default: 22</li>
+              <ul class="text-muted mb-3" style="font-size:.82rem;padding-left:1rem">
+                <li class="mb-1">Connessione via <strong>SSH</strong> (porta 22)</li>
+                <li class="mb-1">Backup dati app + dump DB</li>
+                <li class="mb-1">Utente con permessi lettura</li>
               </ul>
+              <div class="tip-box blue" style="font-size:.78rem">
+                <i class="bi bi-info-circle"></i>
+                <div>Installa <code>sshpass</code> sul server Backup-All se usi password: <code>sudo apt install sshpass</code></div>
+              </div>
             </div>
           </div>
-          <div class="col-md-6">
-            <div class="p-3 rounded h-100" style="background:rgba(96,165,250,.06);border:1px solid rgba(96,165,250,.2)">
-              <div class="fw-semibold mb-2"><i class="bi bi-cloud-upload me-2" style="color:#60a5fa"></i>API QTS</div>
-              <ul class="text-muted mb-0" style="font-size:.83rem">
-                <li>Usa le API native QNAP QTS</li>
-                <li>Porta di default: 8080</li>
-                <li>Richiede QNAP con QTS 5.x</li>
-                <li>Utile se SSH è disabilitato sul QNAP</li>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-3">
+                <div style="width:32px;height:32px;border-radius:7px;background:rgba(59,130,246,.15);color:#93c5fd;display:flex;align-items:center;justify-content:center"><i class="bi bi-windows"></i></div>
+                <span class="fw-semibold">Windows Server</span>
+              </div>
+              <ul class="text-muted mb-3" style="font-size:.82rem;padding-left:1rem">
+                <li class="mb-1">Connessione via <strong>WinRM</strong> (porta 5985)</li>
+                <li class="mb-1">Backup bare-metal con <code>wbadmin</code></li>
+                <li class="mb-1">Utente Administrator</li>
               </ul>
+              <div class="tip-box yellow" style="font-size:.78rem">
+                <i class="bi bi-terminal"></i>
+                <div>Abilita WinRM su Windows:<br><code>winrm quickconfig -y</code></div>
+              </div>
             </div>
           </div>
         </div>
-
-        <ol style="font-size:.88rem" class="text-muted mb-3">
-          <li class="mb-1">Inserisci il nome e l'IP del NAS</li>
-          <li class="mb-1">Scegli il metodo (rsync SSH consigliato)</li>
-          <li class="mb-1">Inserisci utente e password del NAS</li>
-          <li class="mb-1">Indica il <strong>percorso base</strong> dove salvare i backup (es. <code>/share/Backup</code>). La cartella deve esistere sul NAS.</li>
-          <li class="mb-1">Se hai Windows con wbadmin, compila anche la <strong>share SMB</strong> (es. <code>Backup</code>)</li>
-          <li class="mb-1">Clicca <strong>Testa connessione</strong> per verificare subito</li>
-          <li class="mb-1">Clicca <strong>Salva destinazione</strong></li>
-        </ol>
-
-        <div class="alert-dark-info" style="font-size:.82rem">
-          <i class="bi bi-info-circle me-1"></i>
-          <strong>QNAP — abilitare SSH:</strong> Nel pannello di controllo QTS → <em>Applicazioni</em> → <em>SSH</em> → attiva il servizio. Per sicurezza, usa una porta non standard (es. 2222) e disabilita il login root se possibile.
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-3">
+                <div style="width:32px;height:32px;border-radius:7px;background:rgba(251,191,36,.15);color:#fcd34d;display:flex;align-items:center;justify-content:center"><i class="bi bi-cloud-haze2"></i></div>
+                <span class="fw-semibold">VMware ESXi</span>
+              </div>
+              <ul class="text-muted mb-3" style="font-size:.82rem;padding-left:1rem">
+                <li class="mb-1">Connessione via <strong>API vSphere</strong> (porta 443)</li>
+                <li class="mb-1">Snapshot OVF della VM intera</li>
+                <li class="mb-1">Aggiungi prima l'host ESXi</li>
+              </ul>
+              <div class="tip-box blue" style="font-size:.78rem">
+                <i class="bi bi-info-circle"></i>
+                <div>La lista VM si carica automaticamente dalle API ESXi dopo aver aggiunto l'host.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="tip-box green">
+            <i class="bi bi-wifi"></i>
+            <div><strong>Testa prima di salvare</strong> — ogni form ha il pulsante <em>Testa connessione</em> che verifica subito IP, porta e credenziali senza dover aspettare il primo job.</div>
+          </div>
         </div>
       </div>
-    </div>
-
-    <!-- Passo 3 -->
-    <div class="card mb-4" id="passo3">
-      <div class="card-header fw-semibold">
-        <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem;font-size:1.1rem">3</span>
-        Creare un job di backup
-        <a href="/wizard/job" class="btn btn-sm btn-outline-danger ms-3">
-          <i class="bi bi-arrow-right me-1"></i>Vai ai job
-        </a>
-      </div>
-      <div class="card-body">
-        <p class="text-muted mb-3" style="font-size:.88rem">Un job collega una sorgente a una destinazione e definisce quando e come eseguire il backup.</p>
-
-        <div class="row g-3 mb-4">
-          <div class="col-md-4">
-            <div class="p-3 rounded h-100" style="border:1px solid var(--card-border)">
-              <div class="fw-semibold mb-1">Backup Completo</div>
-              <small class="text-muted">Linux: tutti i dati app + dump DB + snapshot VM (se VMware configurato).<br>Windows: wbadmin bare-metal + dati applicativi.</small>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="p-3 rounded h-100" style="border:1px solid var(--card-border)">
-              <div class="fw-semibold mb-1">Solo Dati Applicativi</div>
-              <small class="text-muted">Copia i percorsi configurati nella sorgente + dump del database. Più veloce del completo.</small>
-            </div>
-          </div>
-          <div class="col-md-4">
-            <div class="p-3 rounded h-100" style="border:1px solid var(--card-border)">
-              <div class="fw-semibold mb-1">Snapshot OVF (VMware)</div>
-              <small class="text-muted">Esporta la VM completa come file OVF sul NAS. Solo per sorgenti VMware.</small>
-            </div>
-          </div>
+      <div class="card mt-3" id="servers-list-card" style="display:none">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-server me-2" style="color:var(--cri-red)"></i>Sorgenti configurate</span>
+          <a href="/wizard/server" class="btn btn-sm btn-outline-secondary">Gestisci tutte</a>
         </div>
-
-        <h6 class="text-muted mb-2" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em">Pianificazione (cron)</h6>
-        <div class="table-responsive mb-3">
-          <table class="table table-dark table-sm" style="font-size:.83rem">
-            <thead><tr><th>Preset</th><th>Espressione cron</th><th>Descrizione</th></tr></thead>
-            <tbody>
-              <tr><td>Ogni notte</td><td><code>0 2 * * *</code></td><td>Alle 02:00, tutti i giorni</td></tr>
-              <tr><td>Settimanale</td><td><code>0 3 * * 0</code></td><td>Domenica alle 03:00</td></tr>
-              <tr><td>Solo feriali</td><td><code>0 1 * * 1-5</code></td><td>Lun–Ven alle 01:00</td></tr>
-              <tr><td>Ogni 6 ore</td><td><code>0 */6 * * *</code></td><td>Alle 00:00, 06:00, 12:00, 18:00</td></tr>
-            </tbody>
+        <div class="card-body p-0">
+          <table class="table table-hover mb-0">
+            <thead><tr><th>Nome</th><th>Tipo</th><th>Host / VM</th><th>App</th><th></th></tr></thead>
+            <tbody id="servers-tbody"></tbody>
           </table>
         </div>
-
-        <h6 class="text-muted mb-2" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em">Retention</h6>
-        <p class="text-muted mb-0" style="font-size:.88rem">
-          Il campo <strong>Copie da mantenere</strong> indica quanti backup conservare. Quando viene superato il limite, il backup più vecchio viene eliminato automaticamente. Es.: con 7 copie e backup notturno, mantieni sempre l'ultima settimana.
-        </p>
       </div>
     </div>
+  </div>
 
-    <!-- Passo 4 -->
-    <div class="card mb-4" id="passo4">
-      <div class="card-header fw-semibold">
-        <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem;font-size:1.1rem">4</span>
-        Replica VM (warm standby)
-        <a href="/replication" class="btn btn-sm btn-outline-danger ms-3">
-          <i class="bi bi-arrow-right me-1"></i>Vai alla replica
-        </a>
+  <div class="col-12 d-flex justify-content-center"><div class="vline"></div></div>
+
+  <!-- Step 2 — Destinazioni -->
+  <div class="col-12">
+    <div class="setup-step" id="step-dests" onclick="toggleDetail('dests')">
+      <div class="step-icon" id="si-dests"><i class="bi bi-hourglass-split"></i></div>
+      <div class="step-body">
+        <div class="d-flex align-items-center gap-2">
+          <span class="step-title">2 · Destinazioni</span>
+          <span class="step-count" id="sc-dests">…</span>
+        </div>
+        <div class="step-desc" id="sd-dests">Il NAS o QNAP dove vengono salvati i backup</div>
       </div>
-      <div class="card-body">
-        <p class="text-muted mb-3" style="font-size:.88rem">
-          La replica VM crea e mantiene una copia "standby" di una VM VMware su un host ESXi (lo stesso o uno diverso). In caso di guasto, la VM standby viene avviata e prende il posto della primaria.
-        </p>
+      <a href="/wizard/destination" class="btn btn-sm btn-primary" onclick="event.stopPropagation()">
+        <i class="bi bi-plus me-1"></i>Aggiungi
+      </a>
+      <i class="bi bi-chevron-down text-muted" id="chev-dests" style="transition:transform .2s"></i>
+    </div>
+    <div class="detail-section" id="detail-dests">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <div style="width:32px;height:32px;border-radius:7px;background:rgba(34,197,94,.15);color:#86efac;display:flex;align-items:center;justify-content:center"><i class="bi bi-arrow-left-right"></i></div>
+                <span class="fw-semibold">rsync over SSH</span>
+                <span class="badge-status bs-active ms-1" style="font-size:.68rem">Consigliato</span>
+              </div>
+              <p class="text-muted mb-2" style="font-size:.82rem">Trasferisce solo le modifiche (efficiente), connessione cifrata. Compatibile con qualsiasi NAS Linux.</p>
+              <div class="d-flex gap-3" style="font-size:.82rem;color:var(--text-muted)">
+                <span><i class="bi bi-check2 text-success me-1"></i>Porta 22 (SSH)</span>
+                <span><i class="bi bi-check2 text-success me-1"></i>Incrementale</span>
+                <span><i class="bi bi-check2 text-success me-1"></i>Cifrato</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <div style="width:32px;height:32px;border-radius:7px;background:rgba(59,130,246,.15);color:#93c5fd;display:flex;align-items:center;justify-content:center"><i class="bi bi-cloud-upload"></i></div>
+                <span class="fw-semibold">API QTS (QNAP)</span>
+              </div>
+              <p class="text-muted mb-2" style="font-size:.82rem">Usa le API native QNAP QTS 5.x. Da usare se SSH è disabilitato sul NAS.</p>
+              <div class="d-flex gap-3" style="font-size:.82rem;color:var(--text-muted)">
+                <span><i class="bi bi-check2 text-success me-1"></i>Porta 8080</span>
+                <span><i class="bi bi-info-circle text-warning me-1"></i>QNAP QTS 5.x</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="tip-box yellow">
+            <i class="bi bi-folder2-open"></i>
+            <div><strong>La cartella di destinazione deve esistere sul NAS</strong> prima di salvare. Crea <code>/share/Backup</code> dal pannello QNAP o via SSH. Per i backup Windows con wbadmin, compila anche il campo <em>Share SMB</em> (es. <code>Backup</code>).</div>
+          </div>
+        </div>
+      </div>
+      <div class="card mt-3" id="dests-list-card" style="display:none">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span><i class="bi bi-hdd-network me-2" style="color:var(--cri-red)"></i>Destinazioni configurate</span>
+          <a href="/wizard/destination" class="btn btn-sm btn-outline-secondary">Gestisci tutte</a>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-hover mb-0">
+            <thead><tr><th>Nome</th><th>Tipo</th><th>Host</th><th>Path</th><th></th></tr></thead>
+            <tbody id="dests-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
 
-        <div class="row g-3 mb-4">
-          <div class="col-md-6">
-            <div class="p-3 rounded h-100" style="border:1px solid var(--card-border)">
-              <div class="fw-semibold mb-2"><i class="bi bi-arrow-repeat me-2" style="color:var(--cri-red)"></i>Come funziona la sincronizzazione</div>
-              <ul class="text-muted mb-0" style="font-size:.83rem">
-                <li>Lo strumento <code>ovftool</code> copia la VM primaria sull'host di destinazione</li>
-                <li>La VM standby viene sovrascritta ad ogni sync (flag <code>--overwrite</code>)</li>
-                <li>La VM standby rimane <strong>spenta</strong> finché non avviene un failover</li>
-                <li>La sincronizzazione segue un orario cron configurabile</li>
+  <div class="col-12 d-flex justify-content-center"><div class="vline"></div></div>
+
+  <!-- Step 3 — Job -->
+  <div class="col-12">
+    <div class="setup-step" id="step-jobs" onclick="toggleDetail('jobs')">
+      <div class="step-icon" id="si-jobs"><i class="bi bi-hourglass-split"></i></div>
+      <div class="step-body">
+        <div class="d-flex align-items-center gap-2">
+          <span class="step-title">3 · Job di backup</span>
+          <span class="step-count" id="sc-jobs">…</span>
+        </div>
+        <div class="step-desc" id="sd-jobs">Collega una sorgente a una destinazione e pianifica quando eseguire il backup</div>
+      </div>
+      <a href="/wizard/job" class="btn btn-sm btn-primary" onclick="event.stopPropagation()">
+        <i class="bi bi-plus me-1"></i>Crea job
+      </a>
+      <i class="bi bi-chevron-down text-muted" id="chev-jobs" style="transition:transform .2s"></i>
+    </div>
+    <div class="detail-section" id="detail-jobs">
+      <div class="row g-3">
+        <!-- Tipi backup -->
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <i class="bi bi-archive" style="color:var(--cri-red);font-size:1.1rem"></i>
+                <span class="fw-semibold">Completo</span>
+              </div>
+              <div class="text-muted" style="font-size:.82rem">
+                <div><span class="badge-status bs-active me-1" style="font-size:.67rem">Linux</span> Dati app + dump DB + snapshot VM</div>
+                <div class="mt-1"><span class="badge-status bs-running me-1" style="font-size:.67rem">Windows</span> wbadmin bare-metal + dati app</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <i class="bi bi-database" style="color:#60a5fa;font-size:1.1rem"></i>
+                <span class="fw-semibold">Solo dati applicativi</span>
+              </div>
+              <div class="text-muted" style="font-size:.82rem">Copia solo i percorsi configurati + dump del database. Più veloce, ideale per backup frequenti durante il giorno.</div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <i class="bi bi-camera" style="color:#fbbf24;font-size:1.1rem"></i>
+                <span class="fw-semibold">Snapshot OVF</span>
+              </div>
+              <div class="text-muted" style="font-size:.82rem">Solo VMware. Esporta la VM intera come file OVF/OVA sul NAS. La VM rimane accesa durante l'esportazione.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pianificazione cron -->
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header" style="font-size:.82rem">
+              <i class="bi bi-clock me-2" style="color:var(--cri-red)"></i>Pianificazione — preset comuni
+            </div>
+            <div class="card-body">
+              <div class="d-flex flex-wrap gap-2 mb-3">
+                <div class="cron-pill"><code>0 2 * * *</code><span class="text-muted ms-2">Ogni notte alle 02:00</span></div>
+                <div class="cron-pill"><code>0 3 * * 0</code><span class="text-muted ms-2">Domenica alle 03:00</span></div>
+                <div class="cron-pill"><code>0 1 * * 1-5</code><span class="text-muted ms-2">Lun–Ven alle 01:00</span></div>
+                <div class="cron-pill"><code>0 */6 * * *</code><span class="text-muted ms-2">Ogni 6 ore</span></div>
+                <div class="cron-pill"><code>0 * * * *</code><span class="text-muted ms-2">Ogni ora</span></div>
+              </div>
+              <div class="d-flex gap-2 align-items-center flex-wrap" style="font-size:.8rem;color:var(--text-muted)">
+                <span>Formato:</span>
+                <span style="background:#131620;border:1px solid var(--card-border);border-radius:5px;padding:.2rem .6rem"><code style="color:#fbbf24">minuto</code></span>
+                <span style="background:#131620;border:1px solid var(--card-border);border-radius:5px;padding:.2rem .6rem"><code style="color:#fbbf24">ora</code></span>
+                <span style="background:#131620;border:1px solid var(--card-border);border-radius:5px;padding:.2rem .6rem"><code style="color:#fbbf24">giorno</code></span>
+                <span style="background:#131620;border:1px solid var(--card-border);border-radius:5px;padding:.2rem .6rem"><code style="color:#fbbf24">mese</code></span>
+                <span style="background:#131620;border:1px solid var(--card-border);border-radius:5px;padding:.2rem .6rem"><code style="color:#fbbf24">giorno_sett</code></span>
+                <span class="ms-2"><code>*</code> = ogni &nbsp;·&nbsp; <code>*/n</code> = ogni n &nbsp;·&nbsp; <code>1-5</code> = range</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="tip-box blue">
+            <i class="bi bi-play-circle"></i>
+            <div>Dopo aver creato il job va in <strong>stato Attivo</strong> e parte al prossimo ciclo pianificato. Per avviarlo subito: vai su <a href="/jobs" style="color:#93c5fd">Job di Backup</a> → pulsante <strong>▶ Esegui ora</strong>.</div>
+          </div>
+        </div>
+
+        <!-- Jobs configurati -->
+        <div class="col-12" id="jobs-list-card" style="display:none">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <span><i class="bi bi-briefcase me-2" style="color:var(--cri-red)"></i>Job configurati</span>
+              <a href="/jobs" class="btn btn-sm btn-outline-secondary">Gestisci tutti</a>
+            </div>
+            <div class="card-body p-0">
+              <table class="table table-hover mb-0">
+                <thead><tr><th>Nome</th><th>Sorgente</th><th>Tipo</th><th>Pianificazione</th><th>Stato</th><th></th></tr></thead>
+                <tbody id="jobs-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 d-flex justify-content-center"><div class="vline"></div></div>
+
+  <!-- Step 4 — Replica (opzionale) -->
+  <div class="col-12">
+    <div class="setup-step" id="step-repl" onclick="toggleDetail('repl')">
+      <div class="step-icon" id="si-repl"><i class="bi bi-arrow-repeat"></i></div>
+      <div class="step-body">
+        <div class="d-flex align-items-center gap-2">
+          <span class="step-title">4 · Replica VM</span>
+          <span class="badge-status bs-paused" style="font-size:.68rem">Opzionale</span>
+          <span class="step-count" id="sc-repl">…</span>
+        </div>
+        <div class="step-desc">VM standby sempre sincronizzata — failover manuale o automatico in caso di guasto</div>
+      </div>
+      <a href="/replication" class="btn btn-sm btn-outline-secondary" onclick="event.stopPropagation()">
+        <i class="bi bi-arrow-right me-1"></i>Replica VM
+      </a>
+      <i class="bi bi-chevron-down text-muted" id="chev-repl" style="transition:transform .2s"></i>
+    </div>
+    <div class="detail-section" id="detail-repl">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="fw-semibold mb-3" style="font-size:.88rem"><i class="bi bi-arrow-repeat me-2" style="color:var(--cri-red)"></i>Come funziona</div>
+              <!-- Flow visivo -->
+              <div class="d-flex align-items-center gap-2 mb-3" style="font-size:.8rem">
+                <div style="flex:1;text-align:center;padding:.6rem;border-radius:8px;background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25)">
+                  <i class="bi bi-display d-block mb-1" style="color:#4ade80;font-size:1.2rem"></i>
+                  <div class="fw-semibold">VM Primaria</div>
+                  <div class="badge-status bs-active mt-1">Accesa</div>
+                </div>
+                <div class="text-center" style="flex-shrink:0">
+                  <div style="font-size:.7rem;color:#fbbf24;margin-bottom:2px">ovftool</div>
+                  <i class="bi bi-arrow-right" style="color:#fbbf24"></i>
+                  <div style="font-size:.7rem;color:var(--text-muted);margin-top:2px">pianificato</div>
+                </div>
+                <div style="flex:1;text-align:center;padding:.6rem;border-radius:8px;background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2)">
+                  <i class="bi bi-display d-block mb-1" style="color:#f59e0b;font-size:1.2rem"></i>
+                  <div class="fw-semibold">VM Standby</div>
+                  <div class="badge-status bs-paused mt-1">Spenta</div>
+                </div>
+                <div class="text-center" style="flex-shrink:0">
+                  <div style="font-size:.7rem;color:#ef4444;margin-bottom:2px">failover</div>
+                  <i class="bi bi-arrow-right" style="color:#ef4444"></i>
+                </div>
+                <div style="flex:1;text-align:center;padding:.6rem;border-radius:8px;background:rgba(34,197,94,.08);border:2px solid rgba(34,197,94,.4)">
+                  <i class="bi bi-display d-block mb-1" style="color:#4ade80;font-size:1.2rem"></i>
+                  <div class="fw-semibold">VM Standby</div>
+                  <div class="badge-status bs-success mt-1">Promossa</div>
+                </div>
+              </div>
+              <ul class="text-muted mb-0" style="font-size:.82rem;padding-left:1rem">
+                <li class="mb-1">La VM standby viene sovrascritta a ogni sync (è una copia esatta)</li>
+                <li class="mb-1">Rimane spenta finché non viene eseguito il failover</li>
+                <li class="mb-1">Dopo il failover il job viene messo in pausa automaticamente</li>
               </ul>
             </div>
           </div>
-          <div class="col-md-6">
-            <div class="p-3 rounded h-100" style="border:1px solid var(--card-border)">
-              <div class="fw-semibold mb-2"><i class="bi bi-heart-pulse me-2 text-danger"></i>Auto-failover (opzionale)</div>
-              <ul class="text-muted mb-0" style="font-size:.83rem">
-                <li>Il sistema controlla ogni 60 secondi se la VM primaria è accesa (pyvmomi)</li>
-                <li>Opzionalmente verifica anche la risposta di rete sull'IP configurato</li>
-                <li>Dopo N fallimenti consecutivi (configurabile), avvia automaticamente la standby</li>
-                <li>Il job viene messo in pausa dopo il failover per evitare sovrascritture</li>
-              </ul>
+        </div>
+        <div class="col-md-6">
+          <div class="card h-100">
+            <div class="card-body">
+              <div class="fw-semibold mb-3" style="font-size:.88rem"><i class="bi bi-list-check me-2" style="color:var(--cri-red)"></i>Per iniziare</div>
+              <div class="d-flex flex-column gap-2" style="font-size:.82rem">
+                <div class="d-flex gap-3 align-items-start p-2 rounded" style="background:#131620">
+                  <span style="color:var(--cri-red);font-weight:700;flex-shrink:0">1</span>
+                  <span class="text-muted">Vai su <a href="/replication" style="color:#93c5fd">Replica VM</a> → <strong style="color:var(--text-primary)">+ Nuova replica</strong></span>
+                </div>
+                <div class="d-flex gap-3 align-items-start p-2 rounded" style="background:#131620">
+                  <span style="color:var(--cri-red);font-weight:700;flex-shrink:0">2</span>
+                  <span class="text-muted">Seleziona host ESXi sorgente e VM primaria</span>
+                </div>
+                <div class="d-flex gap-3 align-items-start p-2 rounded" style="background:#131620">
+                  <span style="color:var(--cri-red);font-weight:700;flex-shrink:0">3</span>
+                  <span class="text-muted">Scegli host destinazione e nome della VM standby</span>
+                </div>
+                <div class="d-flex gap-3 align-items-start p-2 rounded" style="background:#131620">
+                  <span style="color:var(--cri-red);font-weight:700;flex-shrink:0">4</span>
+                  <span class="text-muted">Salva → usa <strong style="color:var(--text-primary)">Sync ora</strong> per la prima sincronizzazione</span>
+                </div>
+              </div>
+              <div class="tip-box yellow mt-3" style="font-size:.8rem">
+                <i class="bi bi-exclamation-triangle"></i>
+                <div>Richiede <code>ovftool</code> installato sul server. Se manca, nella pagina Replica VM trovi le istruzioni.</div>
+              </div>
             </div>
-          </div>
-        </div>
-
-        <h6 class="text-muted mb-2" style="font-size:.8rem;text-transform:uppercase;letter-spacing:.08em">Procedura di configurazione</h6>
-        <ol style="font-size:.88rem" class="text-muted mb-3">
-          <li class="mb-1">Assicurati di avere almeno due host ESXi configurati (o uno se la standby è sullo stesso host)</li>
-          <li class="mb-1">Vai su <a href="/replication" style="color:#93c5fd">Replica VM</a> e clicca <strong>+ Nuova replica</strong></li>
-          <li class="mb-1">Seleziona l'host e la VM <strong>sorgente</strong> (la primaria)</li>
-          <li class="mb-1">Seleziona l'host <strong>destinazione</strong> e inserisci il nome che avrà la VM standby</li>
-          <li class="mb-1">Configura la pianificazione cron (es. ogni ora: <code>0 * * * *</code>)</li>
-          <li class="mb-1">Se vuoi l'auto-failover, attiva il toggle e configura intervallo e soglia di fallimenti</li>
-          <li class="mb-1">Clicca <strong>Salva</strong> — la prima sincronizzazione partirà al prossimo ciclo cron. Per avviarla subito, usa il pulsante <strong>Sync ora</strong></li>
-        </ol>
-
-        <div class="alert-dark-info" style="font-size:.82rem">
-          <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
-          <strong>Requisito:</strong> <code>ovftool</code> di VMware deve essere installato sul server Backup-All. Se non è presente, apparirà un avviso nella pagina Replica VM. Scarica ovftool dal sito VMware Developer e installalo con il bundle <code>.bundle</code> fornito.
-        </div>
-
-        <div class="alert-dark-info mt-2" style="font-size:.82rem;border-color:rgba(251,191,36,.3)">
-          <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
-          <strong>Failover manuale:</strong> prima di promuovere la VM standby, assicurati che la VM primaria sia effettivamente spenta o isolata. Avviare entrambe in contemporanea (split-brain) può causare conflitti di rete o corruzione dei dati.
-        </div>
-      </div>
-    </div>
-
-    <!-- Impostazioni -->
-    <div class="card mb-4" id="impostazioni">
-      <div class="card-header fw-semibold">
-        <i class="bi bi-gear me-2" style="color:var(--cri-red)"></i>Impostazioni
-        <a href="/settings" class="btn btn-sm btn-outline-danger ms-3">
-          <i class="bi bi-arrow-right me-1"></i>Vai alle impostazioni
-        </a>
-      </div>
-      <div class="card-body">
-        <div class="row g-3">
-          <div class="col-md-6">
-            <h6 class="text-muted text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.08em">Generali</h6>
-            <ul class="text-muted mb-0" style="font-size:.88rem">
-              <li class="mb-1"><strong>Nome organizzazione</strong> — appare nella topbar e nelle email di notifica</li>
-              <li class="mb-1"><strong>Cambio password</strong> — accessibile dal menu utente in alto a destra</li>
-            </ul>
-          </div>
-          <div class="col-md-6">
-            <h6 class="text-muted text-uppercase mb-2" style="font-size:.72rem;letter-spacing:.08em">Notifiche Email (SMTP)</h6>
-            <ul class="text-muted mb-0" style="font-size:.88rem">
-              <li class="mb-1">Inserisci host SMTP, porta, utente e password</li>
-              <li class="mb-1">Attiva TLS se richiesto dal provider</li>
-              <li class="mb-1">Usa il pulsante <strong>Test SMTP</strong> per verificare la configurazione</li>
-              <li class="mb-1">Ogni job può avere un'email destinataria diversa</li>
-            </ul>
           </div>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- FAQ -->
-    <div class="card mb-4" id="faq">
-      <div class="card-header fw-semibold"><i class="bi bi-question-circle me-2" style="color:var(--cri-red)"></i>Domande frequenti</div>
-      <div class="card-body p-0">
-        <div class="accordion accordion-flush" id="faqAccordion">
+  <div class="col-12 d-flex justify-content-center"><div class="vline"></div></div>
 
-          <div class="accordion-item bg-transparent border-secondary">
-            <h2 class="accordion-header">
-              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
-                Il test connessione passa ma il backup fallisce — perché?
-              </button>
-            </h2>
-            <div id="faq1" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-              <div class="accordion-body text-muted" style="font-size:.88rem">
-                Il test verifica solo la connettività di base (SSH/WinRM/VMware API). Il backup può fallire per motivi diversi: permessi insufficienti sulla directory di destinazione, <code>mysqldump</code> non installato, disco pieno, timeout durante la copia. Controlla i log del job nella sezione <a href="/history" style="color:#93c5fd">Storico</a> per il messaggio di errore preciso.
+  <!-- Step 5 — Notifiche / Impostazioni -->
+  <div class="col-12">
+    <div class="setup-step" id="step-smtp" onclick="toggleDetail('smtp')">
+      <div class="step-icon" id="si-smtp"><i class="bi bi-hourglass-split"></i></div>
+      <div class="step-body">
+        <div class="d-flex align-items-center gap-2">
+          <span class="step-title">5 · Notifiche email</span>
+          <span class="step-count" id="sc-smtp">…</span>
+        </div>
+        <div class="step-desc" id="sd-smtp">Ricevi un'email quando un backup fallisce o riesce</div>
+      </div>
+      <a href="/settings" class="btn btn-sm btn-outline-secondary" onclick="event.stopPropagation()">
+        <i class="bi bi-gear me-1"></i>Impostazioni
+      </a>
+      <i class="bi bi-chevron-down text-muted" id="chev-smtp" style="transition:transform .2s"></i>
+    </div>
+    <div class="detail-section" id="detail-smtp">
+      <div class="card">
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <p class="text-muted mb-3" style="font-size:.82rem">
+                Vai su <a href="/settings" style="color:#93c5fd"><strong>Impostazioni</strong></a> → sezione SMTP. Inserisci host, porta, utente e password del tuo server mail, poi usa il pulsante <strong style="color:var(--text-primary)">Test SMTP</strong> per verificare che arrivi.
+              </p>
+              <div class="tip-box blue" style="font-size:.8rem">
+                <i class="bi bi-envelope"></i>
+                <div>Ogni job può avere un'email destinataria diversa — configurala nella sezione <em>Notifiche</em> del wizard job. Puoi ricevere avvisi solo per i fallimenti, solo per i successi, o entrambi.</div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div style="background:#0d0f14;border:1px solid var(--card-border);border-radius:8px;padding:1rem;font-size:.82rem">
+                <div class="text-muted mb-2" style="font-size:.72rem;text-transform:uppercase;letter-spacing:.06em">Provider comuni</div>
+                <div class="d-flex flex-column gap-2">
+                  <div class="d-flex justify-content-between"><span class="text-muted">Gmail</span><span><code>smtp.gmail.com:587</code> TLS</span></div>
+                  <div class="d-flex justify-content-between"><span class="text-muted">Office 365</span><span><code>smtp.office365.com:587</code> TLS</span></div>
+                  <div class="d-flex justify-content-between"><span class="text-muted">Postfix locale</span><span><code>localhost:25</code> nessun TLS</span></div>
+                </div>
               </div>
             </div>
           </div>
-
-          <div class="accordion-item bg-transparent border-secondary">
-            <h2 class="accordion-header">
-              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
-                Come faccio a eseguire un backup manualmente senza aspettare lo scheduler?
-              </button>
-            </h2>
-            <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-              <div class="accordion-body text-muted" style="font-size:.88rem">
-                Vai su <a href="/jobs" style="color:#93c5fd">Job di Backup</a>, trova il job e clicca il pulsante <strong>Esegui ora</strong> (icona play). Il backup parte immediatamente in background. Puoi seguire l'avanzamento nella sezione <a href="/history" style="color:#93c5fd">Storico</a>.
-              </div>
-            </div>
-          </div>
-
-          <div class="accordion-item bg-transparent border-secondary">
-            <h2 class="accordion-header">
-              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
-                Come recupero un backup dal NAS?
-              </button>
-            </h2>
-            <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-              <div class="accordion-body text-muted" style="font-size:.88rem">
-                Il ripristino è manuale. I backup vengono salvati nel percorso base della destinazione, organizzati in sottocartelle per nome job e data. Per Linux/dati app: copia i file via rsync o SCP. Per Windows wbadmin: utilizza <code>wbadmin start recovery</code> o il tool grafico "Ripristino di sistema". Per VMware OVF: importa il file OVF dall'interfaccia ESXi o con ovftool.
-              </div>
-            </div>
-          </div>
-
-          <div class="accordion-item bg-transparent border-secondary">
-            <h2 class="accordion-header">
-              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq4">
-                Cosa succede se il backup è già in corso quando parte il prossimo?
-              </button>
-            </h2>
-            <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-              <div class="accordion-body text-muted" style="font-size:.88rem">
-                Lo scheduler APScheduler non avvia lo stesso job se è già in esecuzione (misfire policy). Il job successivo partirà normalmente al ciclo pianificato successivo.
-              </div>
-            </div>
-          </div>
-
-          <div class="accordion-item bg-transparent border-secondary">
-            <h2 class="accordion-header">
-              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq5">
-                La replica VM si è bloccata in stato "RUNNING" — cosa faccio?
-              </button>
-            </h2>
-            <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-              <div class="accordion-body text-muted" style="font-size:.88rem">
-                Potrebbe essere che ovftool sia ancora in esecuzione o sia crashato. Verifica su Linux con <code>ps aux | grep ovftool</code>. Se il processo non esiste più, il job è rimasto "bloccato" per un crash inatteso. Riavvia il servizio Backup-All — al riavvio i job in stato RUNNING vengono automaticamente chiusi. Poi lancia una nuova sync manuale.
-              </div>
-            </div>
-          </div>
-
-          <div class="accordion-item bg-transparent border-secondary">
-            <h2 class="accordion-header">
-              <button class="accordion-button collapsed bg-dark text-light" type="button" data-bs-toggle="collapse" data-bs-target="#faq6">
-                Come aggiorno Backup-All a una nuova versione?
-              </button>
-            </h2>
-            <div id="faq6" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-              <div class="accordion-body text-muted" style="font-size:.88rem">
-                Usa lo script <code>update.sh</code> nella directory di installazione (<code>/opt/backup-all/update.sh</code>). Esegui <code>sudo bash update.sh</code>. Lo script scarica l'ultima versione dal branch configurato, aggiorna le dipendenze Python e riavvia il servizio. Il database e la configurazione vengono preservati.
-              </div>
-            </div>
-          </div>
-
         </div>
       </div>
     </div>
+  </div>
 
+</div><!-- /checklist -->
+
+
+<!-- ══════════════════════════════════
+     FAQ
+════════════════════════════════════ -->
+<div class="card">
+  <div class="card-header fw-semibold">
+    <i class="bi bi-question-circle me-2" style="color:var(--cri-red)"></i>Hai un problema?
+  </div>
+  <div class="card-body p-0">
+    <div class="accordion accordion-flush">
+
+      <div class="accordion-item" style="background:transparent;border-color:var(--card-border)">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#q1"
+          style="background:transparent;color:var(--text-primary);font-size:.86rem;box-shadow:none">
+          <i class="bi bi-x-circle me-2" style="color:#ef4444"></i>Il test connessione passa ma il backup fallisce
+        </button>
+        <div id="q1" class="accordion-collapse collapse">
+          <div class="accordion-body" style="font-size:.83rem;color:var(--text-muted)">
+            Il test verifica solo SSH/porta aperta. Il backup può fallire per: permessi insufficienti sulla cartella destinazione sul NAS, <code>mysqldump</code>/<code>pg_dump</code> non installato sulla sorgente, disco pieno, timeout su file grandi.
+            <strong style="color:var(--text-primary)">Soluzione:</strong> vai su <a href="/history" style="color:#93c5fd">Storico</a>, apri il job fallito e leggi i log — il messaggio di errore esatto è lì.
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item" style="background:transparent;border-color:var(--card-border)">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#q2"
+          style="background:transparent;color:var(--text-primary);font-size:.86rem;box-shadow:none">
+          <i class="bi bi-play-circle me-2" style="color:#60a5fa"></i>Come avvio un backup subito senza aspettare lo scheduler
+        </button>
+        <div id="q2" class="accordion-collapse collapse">
+          <div class="accordion-body" style="font-size:.83rem;color:var(--text-muted)">
+            Vai su <a href="/jobs" style="color:#93c5fd">Job di Backup</a> → trova il job → clicca il pulsante <strong style="color:var(--text-primary)">▶ Esegui ora</strong>. Parte immediatamente in background. Segui l'avanzamento nello <a href="/history" style="color:#93c5fd">Storico</a>.
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item" style="background:transparent;border-color:var(--card-border)">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#q3"
+          style="background:transparent;color:var(--text-primary);font-size:.86rem;box-shadow:none">
+          <i class="bi bi-arrow-counterclockwise me-2" style="color:#4ade80"></i>Come recupero i dati da un backup
+        </button>
+        <div id="q3" class="accordion-collapse collapse">
+          <div class="accordion-body" style="font-size:.83rem;color:var(--text-muted)">
+            Il ripristino è manuale. I file sono nel percorso base della destinazione, in sottocartelle <code>[nome-job]/[data]/</code>.<br>
+            <strong style="color:var(--text-primary)">Linux:</strong> copia con rsync o SCP.<br>
+            <strong style="color:var(--text-primary)">Windows:</strong> usa <code>wbadmin start recovery</code> o la GUI "Backup di Windows Server".<br>
+            <strong style="color:var(--text-primary)">VMware OVF:</strong> importa il file dal pannello ESXi (Actions → Deploy OVF Template).
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item" style="background:transparent;border-color:var(--card-border)">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#q4"
+          style="background:transparent;color:var(--text-primary);font-size:.86rem;box-shadow:none">
+          <i class="bi bi-arrow-up-circle me-2" style="color:#fbbf24"></i>Come aggiorno Backup-All
+        </button>
+        <div id="q4" class="accordion-collapse collapse">
+          <div class="accordion-body" style="font-size:.83rem">
+            <div class="cmd-block">
+              <span>sudo bash /opt/backup-all/update.sh</span>
+              <button class="copy-btn" onclick="navigator.clipboard.writeText('sudo bash /opt/backup-all/update.sh');this.innerHTML='<i class=\\'bi bi-check2\\'></i>';setTimeout(()=>this.innerHTML='<i class=\\'bi bi-clipboard\\'></i>',1500)" title="Copia">
+                <i class="bi bi-clipboard"></i>
+              </button>
+            </div>
+            <div class="text-muted mt-2" style="font-size:.8rem">Aggiorna codice, dipendenze Python e riavvia il servizio. Database e configurazione vengono preservati.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="accordion-item" style="background:transparent;border-color:var(--card-border)">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#q5"
+          style="background:transparent;color:var(--text-primary);font-size:.86rem;box-shadow:none">
+          <i class="bi bi-hourglass-split me-2" style="color:#ef4444"></i>La replica VM è bloccata in stato RUNNING
+        </button>
+        <div id="q5" class="accordion-collapse collapse">
+          <div class="accordion-body" style="font-size:.83rem;color:var(--text-muted)">
+            Verifica che ovftool non sia ancora attivo:
+            <div class="cmd-block my-2"><span>ps aux | grep ovftool</span></div>
+            Se il processo non esiste, riavvia il servizio — i job bloccati vengono chiusi automaticamente:
+            <div class="cmd-block mt-2">
+              <span>sudo systemctl restart backup-all</span>
+              <button class="copy-btn" onclick="navigator.clipboard.writeText('sudo systemctl restart backup-all');this.innerHTML='<i class=\\'bi bi-check2\\'></i>';setTimeout(()=>this.innerHTML='<i class=\\'bi bi-clipboard\\'></i>',1500)" title="Copia">
+                <i class="bi bi-clipboard"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
   </div>
 </div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const typeBadge = t => ({
+  linux:   '<span class="badge" style="background:#166534;color:#bbf7d0;font-size:.7rem"><i class="bi bi-terminal me-1"></i>Linux</span>',
+  windows: '<span class="badge" style="background:#1e3a5f;color:#bae6fd;font-size:.7rem"><i class="bi bi-windows me-1"></i>Windows</span>',
+  vmware:  '<span class="badge" style="background:#4a2c00;color:#fde68a;font-size:.7rem"><i class="bi bi-cloud-haze2 me-1"></i>VMware</span>',
+}[t] || t);
+
+const jobStatusBadge = s => ({
+  active:   '<span class="badge-status bs-active">Attivo</span>',
+  paused:   '<span class="badge-status bs-paused">Pausa</span>',
+  disabled: '<span class="badge-status bs-disabled">Disattivo</span>',
+}[s] || s);
+
+const typeLabel = { vm_snapshot:'Snapshot OVF', app_data:'Dati App', full:'Completo' };
+
+function setStep(id, state, countText, descText) {
+  const step = document.getElementById('step-'+id);
+  const icon = document.getElementById('si-'+id);
+  const count = document.getElementById('sc-'+id);
+  const desc = document.getElementById('sd-'+id);
+
+  step.className = 'setup-step ' + state;
+  icon.className = 'step-icon ' + state;
+  icon.innerHTML = state === 'done'
+    ? '<i class="bi bi-check-lg"></i>'
+    : state === 'todo' ? '<i class="bi bi-exclamation-lg"></i>'
+    : '<i class="bi bi-dash"></i>';
+
+  if (count && countText) {
+    count.textContent = countText;
+    count.className = 'step-count ' + (state === 'done' ? 'ok' : 'warn');
+  }
+  if (desc && descText) desc.textContent = descText;
+}
+
+function toggleDetail(id) {
+  const d = document.getElementById('detail-'+id);
+  const c = document.getElementById('chev-'+id);
+  const open = d.classList.toggle('open');
+  c.style.transform = open ? 'rotate(180deg)' : '';
+}
+
+async function refreshStatus() {
+  try {
+    const [servers, dests, jobs, smtp] = await Promise.all([
+      api('GET', '/api/servers'),
+      api('GET', '/api/destinations'),
+      api('GET', '/api/jobs'),
+      api('GET', '/api/settings/smtp').catch(() => ({})),
+    ]);
+
+    const allDone = servers.length && dests.length && jobs.length;
+    document.getElementById('guide-subtitle').textContent = allDone
+      ? 'Sistema configurato e operativo'
+      : 'Segui i passaggi per completare la configurazione';
+
+    // Servers
+    setStep('servers',
+      servers.length ? 'done' : 'todo',
+      servers.length ? servers.length + (servers.length === 1 ? ' sorgente' : ' sorgenti') : 'Nessuna',
+      servers.length ? 'Clicca per vedere le sorgenti configurate' : 'Aggiungi almeno un server da proteggere'
+    );
+    if (servers.length) {
+      document.getElementById('servers-list-card').style.display = '';
+      const tbody = document.getElementById('servers-tbody');
+      tbody.innerHTML = servers.map(s => `
+        <tr>
+          <td class="fw-semibold">${s.name}</td>
+          <td>${typeBadge(s.server_type)}</td>
+          <td><small class="text-muted">${s.server_type === 'vmware' ? (s.vmware_host_name||'—')+' / '+(s.vm_name||'—') : s.ip_address}</small></td>
+          <td><small class="text-muted">${s.app_name || '—'}</small></td>
+          <td><a href="/wizard/server" class="btn btn-sm btn-outline-secondary py-0 px-2">Modifica</a></td>
+        </tr>`).join('');
+    }
+
+    // Destinations
+    setStep('dests',
+      dests.length ? 'done' : 'todo',
+      dests.length ? dests.length + (dests.length === 1 ? ' destinazione' : ' destinazioni') : 'Nessuna',
+      dests.length ? 'Clicca per vedere le destinazioni configurate' : 'Aggiungi il NAS/QNAP dove salvare i backup'
+    );
+    if (dests.length) {
+      document.getElementById('dests-list-card').style.display = '';
+      const destTypeBadge = t => t === 'rsync'
+        ? '<span class="badge" style="background:#166534;color:#bbf7d0;font-size:.7rem">rsync SSH</span>'
+        : '<span class="badge" style="background:#1e3a5f;color:#bae6fd;font-size:.7rem">API QTS</span>';
+      document.getElementById('dests-tbody').innerHTML = dests.map(d => `
+        <tr>
+          <td class="fw-semibold">${d.name}</td>
+          <td>${destTypeBadge(d.dest_type)}</td>
+          <td><code style="color:#fbbf24;font-size:.8rem">${d.host}</code></td>
+          <td><small class="text-muted">${d.base_path}</small></td>
+          <td><a href="/wizard/destination" class="btn btn-sm btn-outline-secondary py-0 px-2">Modifica</a></td>
+        </tr>`).join('');
+    }
+
+    // Jobs
+    setStep('jobs',
+      jobs.length ? 'done' : (servers.length && dests.length ? 'todo' : 'locked'),
+      jobs.length ? jobs.filter(j=>j.status==='active').length + ' attivi / ' + jobs.length + ' totali' : 'Nessuno',
+      jobs.length ? 'Clicca per vedere i job configurati' : 'Crea il primo job per collegare sorgente e destinazione'
+    );
+    if (jobs.length) {
+      document.getElementById('jobs-list-card').style.display = '';
+      document.getElementById('jobs-tbody').innerHTML = jobs.map(j => `
+        <tr>
+          <td class="fw-semibold">${j.name}</td>
+          <td><small class="text-muted">${j.server_name||'—'}</small></td>
+          <td><small>${typeLabel[j.backup_type]||j.backup_type}</small></td>
+          <td><code style="color:#fbbf24;font-size:.78rem">${j.cron_expression}</code></td>
+          <td>${jobStatusBadge(j.status)}</td>
+          <td><a href="/jobs" class="btn btn-sm btn-outline-secondary py-0 px-2">Gestisci</a></td>
+        </tr>`).join('');
+    }
+
+    // SMTP
+    const smtpOk = smtp && smtp.smtp_host;
+    setStep('smtp',
+      smtpOk ? 'done' : 'todo',
+      smtpOk ? smtp.smtp_host : 'Non configurato',
+      smtpOk ? 'Notifiche email attive su ' + smtp.smtp_host : 'Configura SMTP per ricevere avvisi via email'
+    );
+
+    // Replica
+    try {
+      const repls = await api('GET', '/api/replication');
+      const replActive = repls.filter(r => r.status === 'active').length;
+      document.getElementById('sc-repl').textContent = repls.length
+        ? replActive + ' attive / ' + repls.length + ' totali'
+        : 'Nessuna';
+      document.getElementById('sc-repl').className = 'step-count ' + (repls.length ? 'ok' : '');
+      document.getElementById('si-repl').className = 'step-icon ' + (repls.length ? 'done' : '');
+      if (repls.length) document.getElementById('si-repl').innerHTML = '<i class="bi bi-check-lg"></i>';
+      else document.getElementById('si-repl').innerHTML = '<i class="bi bi-arrow-repeat"></i>';
+    } catch(e) {}
+
+  } catch(e) {
+    document.getElementById('guide-subtitle').textContent = 'Errore caricamento stato';
+  }
+}
+
+refreshStatus();
+</script>
 {% endblock %}
