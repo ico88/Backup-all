@@ -144,13 +144,26 @@ def backup_system_wbadmin(server, dest_cfg, timestamp: str, log_fn=None) -> None
 
     # Mappa drive temporaneo per la share (wbadmin accetta sia UNC che drive lettera)
     # Usiamo direttamente il path UNC con sottocartella server/timestamp
+    # Escape caratteri speciali per PowerShell
+    smb_password_esc = smb_password.replace("'", "''")
+    smb_user_esc = smb_user.replace("'", "''")
+
+    connect_block = ""
+    disconnect_block = ""
+    if smb_user:
+        connect_block = f"""
+$smbPass = ConvertTo-SecureString '{smb_password_esc}' -AsPlainText -Force
+$smbCred = New-Object System.Management.Automation.PSCredential('{smb_user_esc}', $smbPass)
+New-PSDrive -Name 'BKP' -PSProvider FileSystem -Root '{unc_base}' -Credential $smbCred -Persist:$false -ErrorAction Stop | Out-Null
+"""
+        disconnect_block = "Remove-PSDrive -Name 'BKP' -Force -ErrorAction SilentlyContinue"
+
     ps_cmd = f"""
 $ErrorActionPreference = 'Stop'
 $uncBase = '{unc_base}'
 $backupTarget = '{backup_target}'
 
-# Connetti la share SMB se le credenziali sono fornite
-{f'net use $uncBase /user:"{smb_user}" "{smb_password}" /persistent:no | Out-Null' if smb_user else '# nessuna credenziale SMB'}
+{connect_block}
 
 # Crea la cartella di destinazione
 New-Item -ItemType Directory -Path $backupTarget -Force | Out-Null
@@ -165,7 +178,7 @@ if ($rc -eq 0) {{
     Write-Output "WBADMIN_FAIL:$rc"
 }}
 
-{f'net use $uncBase /delete /yes | Out-Null' if smb_user else ''}
+{disconnect_block}
 """
 
     if log_fn:
