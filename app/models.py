@@ -182,7 +182,7 @@ class Server(Base):
 
     vmware_host = relationship("VMwareHost", back_populates="servers", foreign_keys=[vmware_host_id])
     xcp_host = relationship("XCPHost", back_populates="servers", foreign_keys=[xcp_host_id])
-    backup_jobs = relationship("BackupJob", back_populates="server")
+    backup_jobs = relationship("BackupJob", back_populates="server", cascade="all, delete-orphan")
 
 
 class BackupDestination(Base):
@@ -203,7 +203,7 @@ class BackupDestination(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    backup_jobs = relationship("BackupJob", back_populates="destination")
+    backup_jobs = relationship("BackupJob", back_populates="destination", cascade="all, delete-orphan")
 
 
 class BackupJob(Base):
