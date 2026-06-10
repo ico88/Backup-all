@@ -72,6 +72,18 @@ def create_vmware_host(data: VMwareHostCreate, db: Session = Depends(get_db)):
     return {"id": host.id, "name": host.name}
 
 
+@router.delete("/vmware-hosts/{host_id}", status_code=204)
+def delete_vmware_host(host_id: int, db: Session = Depends(get_db)):
+    host = db.get(VMwareHost, host_id)
+    if not host:
+        raise HTTPException(404, "Host VMware non trovato")
+    in_use = db.query(Server).filter(Server.vmware_host_id == host_id).count()
+    if in_use:
+        raise HTTPException(409, f"Host usato da {in_use} sorgente/i — rimuovile prima")
+    db.delete(host)
+    db.commit()
+
+
 @router.get("/vmware-hosts/{host_id}/vms")
 def list_vms_on_host(host_id: int, db: Session = Depends(get_db)):
     host = db.get(VMwareHost, host_id)
@@ -106,6 +118,19 @@ def create_xcp_host(data: XCPHostCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(host)
     return {"id": host.id, "name": host.name}
+
+
+@router.delete("/xcp-hosts/{host_id}", status_code=204)
+def delete_xcp_host(host_id: int, db: Session = Depends(get_db)):
+    from app.models import XCPHost
+    host = db.get(XCPHost, host_id)
+    if not host:
+        raise HTTPException(404, "Host XCP-ng non trovato")
+    in_use = db.query(Server).filter(Server.xcp_host_id == host_id).count()
+    if in_use:
+        raise HTTPException(409, f"Host usato da {in_use} sorgente/i — rimuovile prima")
+    db.delete(host)
+    db.commit()
 
 
 @router.get("/xcp-hosts/{host_id}/vms")

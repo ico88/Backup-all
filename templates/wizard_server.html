@@ -532,6 +532,7 @@ function renderEsxiList() {
       <span class="fw-semibold">${h.name}</span>
       <code style="color:#fbbf24;font-size:.8rem">${h.host}:${h.port}</code>
       <small class="text-muted">${h.username}</small>
+      <button class="btn btn-sm btn-outline-danger ms-auto" onclick="deleteEsxiHost(${h.id},'${h.name.replace(/'/g,'\\\'')}')" title="Elimina"><i class="bi bi-trash"></i></button>
     </div>`).join('');
 }
 
@@ -576,6 +577,15 @@ async function saveEsxiHost() {
   } catch(e) { showToast(e.message, 'danger'); }
 }
 
+async function deleteEsxiHost(id, name) {
+  if (!confirm(`Eliminare l'host ESXi "${name}"?`)) return;
+  try {
+    await api('DELETE', `/api/servers/vmware-hosts/${id}`);
+    showToast('Host ESXi eliminato', 'success');
+    loadVmwareHosts();
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
 // ── XCP-ng hosts ─────────────────────────────────────
 async function loadXCPHosts() {
   try {
@@ -604,6 +614,7 @@ function renderXCPList() {
       <span class="fw-semibold">${h.name}</span>
       <code style="color:#c4b5fd;font-size:.8rem">${h.host}:${h.port}</code>
       <small class="text-muted">${h.username}</small>
+      <button class="btn btn-sm btn-outline-danger ms-auto" onclick="deleteXCPHost(${h.id},'${h.name.replace(/'/g,'\\\'')}')" title="Elimina"><i class="bi bi-trash"></i></button>
     </div>`).join('');
 }
 
@@ -644,6 +655,15 @@ async function saveXCPHost() {
     ['xn-name','xn-host','xn-user','xn-pass'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('xn-port').value = '443';
     bootstrap.Collapse.getInstance(document.getElementById('add-xcpng-form'))?.hide();
+    loadXCPHosts();
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
+async function deleteXCPHost(id, name) {
+  if (!confirm(`Eliminare l'host XCP-ng "${name}"?`)) return;
+  try {
+    await api('DELETE', `/api/servers/xcp-hosts/${id}`);
+    showToast('Host XCP-ng eliminato', 'success');
     loadXCPHosts();
   } catch(e) { showToast(e.message, 'danger'); }
 }
