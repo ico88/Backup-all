@@ -84,17 +84,17 @@
     .table td { border-color: var(--card-border); padding: .7rem 1rem; vertical-align: middle; }
     .table-hover tbody tr:hover td { background: rgba(255,255,255,.03); }
 
-    /* Status badges */
-    .badge-status { display: inline-flex; align-items: center; gap: .35rem; padding: .22rem .6rem; border-radius: 20px; font-size: .72rem; font-weight: 600; }
+    /* Status badges — sfondo solido, testo chiaro ad alto contrasto */
+    .badge-status { display: inline-flex; align-items: center; gap: .35rem; padding: .22rem .65rem; border-radius: 20px; font-size: .72rem; font-weight: 600; }
     .badge-status::before { content:''; width:6px; height:6px; border-radius:50%; background:currentColor; }
-    .bs-success { background:rgba(34,197,94,.12);  color:var(--success); }
-    .bs-failed  { background:rgba(239,68,68,.12);  color:var(--danger); }
-    .bs-running { background:rgba(59,130,246,.12); color:var(--info); animation: pulse-run 1.5s infinite; }
-    .bs-partial { background:rgba(245,158,11,.12); color:var(--warning); }
-    .bs-active  { background:rgba(34,197,94,.1);   color:var(--success); }
-    .bs-paused  { background:rgba(245,158,11,.1);  color:var(--warning); }
-    .bs-disabled{ background:rgba(107,114,128,.1); color:var(--text-muted); }
-    @keyframes pulse-run { 0%,100%{opacity:1} 50%{opacity:.5} }
+    .bs-success { background:#166534; color:#bbf7d0; }
+    .bs-failed  { background:#7f1d1d; color:#fecaca; }
+    .bs-running { background:#1e3a5f; color:#bae6fd; animation: pulse-run 1.5s infinite; }
+    .bs-partial { background:#78350f; color:#fde68a; }
+    .bs-active  { background:#166534; color:#bbf7d0; }
+    .bs-paused  { background:#78350f; color:#fde68a; }
+    .bs-disabled{ background:#1f2937; color:#9ca3af; }
+    @keyframes pulse-run { 0%,100%{opacity:1} 50%{opacity:.6} }
 
     /* Buttons */
     .btn-primary   { background:var(--cri-red);  border-color:var(--cri-red);  color:#fff; }

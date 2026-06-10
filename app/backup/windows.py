@@ -1,4 +1,4 @@
-"""Backup dati applicativi da server Windows (Gamma/TeamSystem) via WinRM."""
+"""Backup dati applicativi da server Windows via WinRM."""
 import json
 import os
 import winrm

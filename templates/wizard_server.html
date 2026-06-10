@@ -1,193 +1,188 @@
 {% extends "base.html" %}
-{% block title %}Aggiungi Server{% endblock %}
+{% block title %}Sorgenti{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-lg-8">
-    <div class="card shadow-sm">
-      <div class="card-header">
-        <h5 class="mb-0"><i class="bi bi-server me-2 text-danger"></i>Configura Server / VM</h5>
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="page-title"><i class="bi bi-hdd-stack me-2" style="color:var(--cri-red)"></i>Sorgenti</div>
+  <button class="btn btn-primary btn-sm" onclick="toggleForm()">
+    <i class="bi bi-plus me-1"></i>Aggiungi sorgente
+  </button>
+</div>
+
+<div class="card mb-4">
+  <div class="card-header"><i class="bi bi-list-ul me-2" style="color:var(--cri-red)"></i>Server configurati</div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead><tr><th>Nome</th><th>Tipo</th><th>IP</th><th>VM ESXi</th><th>Applicazione</th><th>Database</th><th></th></tr></thead>
+        <tbody id="servers-tbody">
+          <tr><td colspan="7" class="text-center py-4 text-muted"><i class="bi bi-arrow-repeat spin me-2"></i>Caricamento…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="add-form-wrap" style="display:none">
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-plus-circle me-2" style="color:var(--cri-red)"></i>Nuovo server</span>
+      <button class="btn btn-outline-secondary btn-sm btn-icon" onclick="toggleForm()"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="card-body">
+      <div class="wizard-steps mb-4">
+        <div class="wizard-step active" id="step-ind-1"><div class="wizard-step-num">1</div><span>Tipo</span></div>
+        <div class="wizard-connector"></div>
+        <div class="wizard-step" id="step-ind-2"><div class="wizard-step-num">2</div><span>Connessione</span></div>
+        <div class="wizard-connector"></div>
+        <div class="wizard-step" id="step-ind-3"><div class="wizard-step-num">3</div><span>VMware</span></div>
+        <div class="wizard-connector"></div>
+        <div class="wizard-step" id="step-ind-4"><div class="wizard-step-num">4</div><span>Applicazione</span></div>
       </div>
-      <div class="card-body">
-        <!-- Step indicator -->
-        <div class="step-wizard d-flex gap-4 mb-4 pb-3 border-bottom" id="steps">
-          <div class="step active" id="step-ind-1"><div class="step-num">1</div><span>Tipo server</span></div>
-          <div class="step" id="step-ind-2"><div class="step-num">2</div><span>Connessione</span></div>
-          <div class="step" id="step-ind-3"><div class="step-num">3</div><span>VMware</span></div>
-          <div class="step" id="step-ind-4"><div class="step-num">4</div><span>Applicazione</span></div>
+      <form id="server-form">
+        <div id="step-1">
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <div class="card type-card h-100" data-type="windows" onclick="selectType('windows',this)" style="border:2px solid var(--card-border);cursor:pointer;transition:.15s">
+                <div class="card-body text-center py-4">
+                  <i class="bi bi-windows" style="font-size:2rem;color:#38bdf8"></i>
+                  <div class="fw-semibold mt-2">Windows Server</div>
+                  <small class="text-muted">WinRM / PowerShell</small>
+                </div>
+              </div>
+            </div>
+            <div class="col-md-6">
+              <div class="card type-card h-100" data-type="linux" onclick="selectType('linux',this)" style="border:2px solid var(--card-border);cursor:pointer;transition:.15s">
+                <div class="card-body text-center py-4">
+                  <i class="bi bi-terminal" style="font-size:2rem;color:#4ade80"></i>
+                  <div class="fw-semibold mt-2">Linux / Debian</div>
+                  <small class="text-muted">SSH / rsync</small>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">Nome identificativo</label><input class="form-control" id="f-name" placeholder="es. server-01" required></div>
+            <div class="col-md-6"><label class="form-label">Descrizione (opzionale)</label><input class="form-control" id="f-desc" placeholder="es. Server applicativo principale"></div>
+          </div>
         </div>
 
-        <form id="server-form">
-          <!-- Step 1: tipo -->
-          <div id="step-1">
-            <h6 class="mb-3">Che tipo di server vuoi aggiungere?</h6>
+        <div id="step-2" style="display:none">
+          <div class="mb-3"><label class="form-label">Indirizzo IP</label><input class="form-control" id="f-ip" placeholder="192.168.1.x" required></div>
+          <div id="linux-conn">
             <div class="row g-3">
-              <div class="col-md-6">
-                <div class="card h-100 border-2 cursor-pointer type-card" data-type="windows" onclick="selectType('windows',this)">
-                  <div class="card-body text-center py-4">
-                    <i class="bi bi-windows fs-1 text-primary mb-2"></i>
-                    <div class="fw-semibold">Windows Server</div>
-                    <small class="text-muted">Gamma / TeamSystem</small>
-                  </div>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="card h-100 border-2 cursor-pointer type-card" data-type="linux" onclick="selectType('linux',this)">
-                  <div class="card-body text-center py-4">
-                    <i class="bi bi-terminal fs-1 text-success mb-2"></i>
-                    <div class="fw-semibold">Linux / Debian</div>
-                    <small class="text-muted">Abulafia</small>
-                  </div>
-                </div>
-              </div>
+              <div class="col-md-3"><label class="form-label">Porta SSH</label><input class="form-control" id="f-ssh-port" value="22" type="number"></div>
+              <div class="col-md-9"><label class="form-label">Utente SSH</label><input class="form-control" id="f-user-linux" placeholder="root"></div>
             </div>
             <div class="mt-3">
-              <label class="form-label">Nome identificativo</label>
-              <input class="form-control" id="f-name" placeholder="es. windows-gamma" required>
+              <label class="form-label">Autenticazione</label>
+              <div class="d-flex gap-3">
+                <div class="form-check"><input class="form-check-input" type="radio" name="auth-type" id="auth-pass" value="password" checked><label class="form-check-label form-label" for="auth-pass">Password</label></div>
+                <div class="form-check"><input class="form-check-input" type="radio" name="auth-type" id="auth-key" value="key"><label class="form-check-label form-label" for="auth-key">Chiave SSH</label></div>
+              </div>
             </div>
-            <div class="mt-3">
-              <label class="form-label">Descrizione (opzionale)</label>
-              <input class="form-control" id="f-desc" placeholder="es. Server Windows con TeamSystem Gamma">
+            <div id="auth-pass-div" class="mt-3"><label class="form-label">Password SSH</label><input type="password" class="form-control" id="f-pass-linux"></div>
+            <div id="auth-key-div" style="display:none" class="mt-3"><label class="form-label">Percorso chiave privata</label><input class="form-control" id="f-key-path" placeholder="/home/backup/.ssh/id_rsa"></div>
+          </div>
+          <div id="windows-conn" style="display:none">
+            <div class="row g-3">
+              <div class="col-md-3"><label class="form-label">Porta WinRM</label><input class="form-control" id="f-winrm-port" value="5985" type="number"></div>
+              <div class="col-md-9"><label class="form-label">Utente Windows</label><input class="form-control" id="f-user-win" placeholder="Administrator"></div>
+            </div>
+            <div class="mt-3"><label class="form-label">Password Windows</label><input type="password" class="form-control" id="f-pass-win"></div>
+            <div class="alert-dark-info mt-3"><i class="bi bi-info-circle me-1"></i>Abilitare WinRM: <code style="color:#93c5fd">winrm quickconfig -y</code></div>
+          </div>
+        </div>
+
+        <div id="step-3" style="display:none">
+          <div class="form-check form-switch mb-3">
+            <input class="form-check-input" type="checkbox" id="f-has-vm" checked>
+            <label class="form-check-label form-label" for="f-has-vm">Questa VM è su ESXi (abilita snapshot OVF)</label>
+          </div>
+          <div id="vmware-fields">
+            <div class="mb-3">
+              <label class="form-label">Host ESXi</label>
+              <div class="input-group">
+                <select class="form-select" id="f-vmhost"><option value="">— Seleziona host ESXi —</option></select>
+                <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalESXi"><i class="bi bi-plus"></i></button>
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Nome VM su ESXi</label>
+              <div class="input-group">
+                <input class="form-control" id="f-vm-name" placeholder="es. VM-Windows-01">
+                <button type="button" class="btn btn-outline-secondary" onclick="loadVMs()"><i class="bi bi-search me-1"></i>Scopri</button>
+              </div>
+              <div id="vms-dropdown" class="list-group mt-1" style="display:none;max-height:150px;overflow-y:auto;position:absolute;z-index:100;width:60%"></div>
             </div>
           </div>
+        </div>
 
-          <!-- Step 2: connessione -->
-          <div id="step-2" style="display:none">
-            <h6 class="mb-3">Parametri di connessione</h6>
-            <div class="mb-3">
-              <label class="form-label">Indirizzo IP</label>
-              <input class="form-control" id="f-ip" placeholder="192.168.1.x" required>
-            </div>
-            <div id="linux-conn">
-              <div class="row g-3">
-                <div class="col-md-4">
-                  <label class="form-label">Porta SSH</label>
-                  <input class="form-control" id="f-ssh-port" value="22" type="number">
-                </div>
-                <div class="col-md-8">
-                  <label class="form-label">Utente SSH</label>
-                  <input class="form-control" id="f-user-linux" placeholder="root o utente sudo">
-                </div>
-              </div>
-              <div class="mt-3">
-                <label class="form-label">Autenticazione</label>
-                <div class="form-check"><input class="form-check-input" type="radio" name="auth-type" id="auth-pass" value="password" checked>
-                  <label class="form-check-label" for="auth-pass">Password</label></div>
-                <div class="form-check"><input class="form-check-input" type="radio" name="auth-type" id="auth-key" value="key">
-                  <label class="form-check-label" for="auth-key">Chiave SSH</label></div>
-              </div>
-              <div id="auth-pass-div" class="mt-3">
-                <label class="form-label">Password SSH</label>
-                <input type="password" class="form-control" id="f-pass-linux">
-              </div>
-              <div id="auth-key-div" style="display:none" class="mt-3">
-                <label class="form-label">Percorso chiave privata (sul server Backup-All)</label>
-                <input class="form-control" id="f-key-path" placeholder="/home/backup/.ssh/id_rsa">
-              </div>
-            </div>
-            <div id="windows-conn" style="display:none">
-              <div class="row g-3">
-                <div class="col-md-4">
-                  <label class="form-label">Porta WinRM</label>
-                  <input class="form-control" id="f-winrm-port" value="5985" type="number">
-                </div>
-                <div class="col-md-8">
-                  <label class="form-label">Utente Windows</label>
-                  <input class="form-control" id="f-user-win" placeholder="Administrator">
-                </div>
-              </div>
-              <div class="mt-3">
-                <label class="form-label">Password Windows</label>
-                <input type="password" class="form-control" id="f-pass-win">
-              </div>
-              <div class="alert alert-info mt-3 small">
-                <i class="bi bi-info-circle me-1"></i>
-                Assicurarsi che WinRM sia abilitato sul server Windows:
-                <code>winrm quickconfig -y</code>
-              </div>
-            </div>
-          </div>
-
-          <!-- Step 3: VMware -->
-          <div id="step-3" style="display:none">
-            <h6 class="mb-3">Configurazione VMware ESXi</h6>
-            <div class="form-check form-switch mb-3">
-              <input class="form-check-input" type="checkbox" id="f-has-vm" checked>
-              <label class="form-check-label" for="f-has-vm">Questa VM è su ESXi (backup completo OVF)</label>
-            </div>
-            <div id="vmware-fields">
-              <div class="mb-3">
-                <label class="form-label">Host ESXi</label>
-                <div class="input-group">
-                  <select class="form-select" id="f-vmhost">
-                    <option value="">— Seleziona host ESXi —</option>
-                  </select>
-                  <button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#modalESXi">
-                    <i class="bi bi-plus"></i> Aggiungi
-                  </button>
-                </div>
-              </div>
-              <div class="mb-3">
-                <label class="form-label">Nome VM su ESXi</label>
-                <div class="input-group">
-                  <input class="form-control" id="f-vm-name" placeholder="es. Windows-Gamma">
-                  <button type="button" class="btn btn-outline-secondary" onclick="loadVMs()">
-                    <i class="bi bi-search"></i> Scopri
-                  </button>
-                </div>
-                <div id="vms-dropdown" class="list-group mt-1" style="display:none;max-height:150px;overflow-y:auto;position:absolute;z-index:100;width:100%"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Step 4: applicazione -->
-          <div id="step-4" style="display:none">
-            <h6 class="mb-3">Dati applicativi (opzionale)</h6>
-            <div class="mb-3">
-              <label class="form-label">Nome applicazione</label>
-              <input class="form-control" id="f-app-name" placeholder="gamma, abulafia, …">
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Percorsi dati da includere</label>
-              <div id="paths-list"></div>
-              <button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="addPath()">
-                <i class="bi bi-plus"></i> Aggiungi percorso
-              </button>
-            </div>
-            <div class="mb-3">
+        <div id="step-4" style="display:none">
+          <div class="row g-3">
+            <div class="col-md-6"><label class="form-label">Nome applicazione (opzionale)</label><input class="form-control" id="f-app-name" placeholder="es. gestionale, crm, erp"></div>
+            <div class="col-md-6">
               <label class="form-label">Database applicativo</label>
               <select class="form-select" id="f-db-type" onchange="toggleDB()">
-                <option value="">Nessuno / non necessario</option>
+                <option value="">Nessuno</option>
                 <option value="mssql">SQL Server (MSSQL)</option>
                 <option value="postgresql">PostgreSQL</option>
                 <option value="mysql">MySQL / MariaDB</option>
               </select>
             </div>
-            <div id="db-fields" style="display:none">
-              <div class="row g-3">
-                <div class="col-md-4"><label class="form-label">Nome DB</label>
-                  <input class="form-control" id="f-db-name"></div>
-                <div class="col-md-4"><label class="form-label">Utente DB</label>
-                  <input class="form-control" id="f-db-user"></div>
-                <div class="col-md-4"><label class="form-label">Password DB</label>
-                  <input type="password" class="form-control" id="f-db-pass"></div>
-              </div>
+          </div>
+          <div class="mt-3">
+            <label class="form-label">Percorsi dati da includere</label>
+            <div id="paths-list"></div>
+            <button type="button" class="btn btn-sm btn-outline-secondary mt-2" onclick="addPath()"><i class="bi bi-plus me-1"></i>Aggiungi percorso</button>
+          </div>
+          <div id="db-fields" style="display:none" class="mt-3">
+            <div class="row g-3">
+              <div class="col-md-4"><label class="form-label">Nome DB</label><input class="form-control" id="f-db-name"></div>
+              <div class="col-md-4"><label class="form-label">Utente DB</label><input class="form-control" id="f-db-user"></div>
+              <div class="col-md-4"><label class="form-label">Password DB</label><input type="password" class="form-control" id="f-db-pass"></div>
             </div>
           </div>
+        </div>
 
-          <!-- Pulsanti navigazione -->
-          <div class="d-flex justify-content-between mt-4 pt-3 border-top">
-            <button type="button" class="btn btn-outline-secondary" id="btn-prev" onclick="prevStep()" style="display:none">
-              <i class="bi bi-arrow-left"></i> Indietro
-            </button>
-            <button type="button" class="btn btn-danger" id="btn-next" onclick="nextStep()">
-              Avanti <i class="bi bi-arrow-right"></i>
-            </button>
-            <button type="submit" class="btn btn-success" id="btn-save" style="display:none">
-              <i class="bi bi-check-lg"></i> Salva Server
-            </button>
-          </div>
-        </form>
+        <div class="d-flex justify-content-between mt-4 pt-3" style="border-top:1px solid var(--card-border)">
+          <button type="button" class="btn btn-outline-secondary" id="btn-prev" onclick="prevStep()" style="display:none"><i class="bi bi-arrow-left me-1"></i>Indietro</button>
+          <button type="button" class="btn btn-primary ms-auto" id="btn-next" onclick="nextStep()">Avanti <i class="bi bi-arrow-right ms-1"></i></button>
+          <button type="submit" class="btn btn-primary ms-auto" id="btn-save" style="display:none"><i class="bi bi-check2 me-1"></i>Salva Server</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal modifica -->
+<div class="modal fade" id="editServerModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title"><i class="bi bi-pencil-square me-2"></i>Modifica — <span id="edit-title"></span></h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6"><label class="form-label">Nome</label><input class="form-control" id="e-name"></div>
+          <div class="col-md-6"><label class="form-label">Descrizione</label><input class="form-control" id="e-desc"></div>
+          <div class="col-md-5"><label class="form-label">Indirizzo IP</label><input class="form-control" id="e-ip"></div>
+          <div class="col-md-3"><label class="form-label">Porta SSH/WinRM</label><input class="form-control" id="e-port" type="number"></div>
+          <div class="col-md-4"><label class="form-label">Tipo</label><select class="form-select" id="e-type"><option value="linux">Linux</option><option value="windows">Windows</option></select></div>
+          <div class="col-md-6"><label class="form-label">Utente</label><input class="form-control" id="e-user"></div>
+          <div class="col-md-6"><label class="form-label">Password <span class="text-muted" style="font-size:.75rem">(vuoto = invariata)</span></label><input type="password" class="form-control" id="e-pass" placeholder="••••••••"></div>
+          <div class="col-md-6"><label class="form-label">Nome VM ESXi</label><input class="form-control" id="e-vm"></div>
+          <div class="col-md-6"><label class="form-label">Nome applicazione</label><input class="form-control" id="e-app"></div>
+          <div class="col-md-4"><label class="form-label">Database</label><select class="form-select" id="e-db-type"><option value="">Nessuno</option><option value="mssql">SQL Server</option><option value="postgresql">PostgreSQL</option><option value="mysql">MySQL</option></select></div>
+          <div class="col-md-4"><label class="form-label">Nome DB</label><input class="form-control" id="e-db-name"></div>
+          <div class="col-md-4"><label class="form-label">Utente DB</label><input class="form-control" id="e-db-user"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Annulla</button>
+        <button class="btn btn-outline-info btn-sm" id="btn-test-server" onclick="testServerConn()"><i class="bi bi-wifi me-1"></i>Testa connessione</button>
+        <button class="btn btn-primary btn-sm" onclick="saveEdit()"><i class="bi bi-check2 me-1"></i>Salva modifiche</button>
       </div>
     </div>
   </div>
@@ -195,158 +190,113 @@
 
 <!-- Modal ESXi -->
 <div class="modal fade" id="modalESXi" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header"><h5 class="modal-title">Aggiungi Host ESXi</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-      <div class="modal-body">
-        <div class="mb-3"><label class="form-label">Nome</label><input class="form-control" id="esxi-name" placeholder="ESXi CRI Catania"></div>
-        <div class="mb-3"><label class="form-label">Indirizzo IP/Hostname</label><input class="form-control" id="esxi-host"></div>
-        <div class="mb-3"><label class="form-label">Porta</label><input class="form-control" id="esxi-port" value="443" type="number"></div>
-        <div class="mb-3"><label class="form-label">Utente</label><input class="form-control" id="esxi-user" placeholder="root"></div>
-        <div class="mb-3"><label class="form-label">Password</label><input type="password" class="form-control" id="esxi-pass"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
-        <button type="button" class="btn btn-danger" onclick="saveESXi()">Salva</button>
-      </div>
+  <div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h6 class="modal-title"><i class="bi bi-server me-2"></i>Aggiungi Host ESXi</h6><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <div class="mb-3"><label class="form-label">Nome</label><input class="form-control form-control-sm" id="esxi-name" placeholder="ESXi principale"></div>
+      <div class="mb-3"><label class="form-label">Indirizzo IP/Hostname</label><input class="form-control form-control-sm" id="esxi-host"></div>
+      <div class="mb-3"><label class="form-label">Porta</label><input class="form-control form-control-sm" id="esxi-port" value="443" type="number"></div>
+      <div class="mb-3"><label class="form-label">Utente</label><input class="form-control form-control-sm" id="esxi-user" placeholder="root"></div>
+      <div class="mb-3"><label class="form-label">Password</label><input type="password" class="form-control form-control-sm" id="esxi-pass"></div>
     </div>
-  </div>
+    <div class="modal-footer"><button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Annulla</button><button class="btn btn-sm btn-primary" onclick="saveESXi()">Salva</button></div>
+  </div></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 let currentStep = 1; const totalSteps = 4;
-let selectedType = null;
+let selectedType = null, editingId = null;
 
-function selectType(type, el) {
-  document.querySelectorAll('.type-card').forEach(c=>c.classList.remove('border-danger','bg-light'));
-  el.classList.add('border-danger','bg-light');
-  selectedType = type;
-  document.getElementById('windows-conn').style.display = type==='windows' ? '' : 'none';
-  document.getElementById('linux-conn').style.display   = type==='linux'   ? '' : 'none';
+const typeBadge = {
+  windows: '<span style="background:#1e3a5f;color:#bae6fd;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600">Windows</span>',
+  linux:   '<span style="background:#166534;color:#bbf7d0;padding:2px 9px;border-radius:20px;font-size:.72rem;font-weight:600">Linux</span>'
+};
+
+async function loadServers() {
+  const servers = await api('GET', '/api/servers');
+  const tb = document.getElementById('servers-tbody');
+  if (!servers.length) { tb.innerHTML='<tr><td colspan="7" class="text-center py-4 text-muted"><i class="bi bi-inbox me-2"></i>Nessun server configurato</td></tr>'; return; }
+  tb.innerHTML = servers.map(s=>`
+    <tr style="cursor:pointer" onclick="openEdit(${s.id})" title="Clicca per modificare">
+      <td><span class="fw-semibold" style="font-size:.85rem">${s.name}</span>${s.description?`<div style="font-size:.72rem;color:var(--text-muted)">${s.description}</div>`:''}</td>
+      <td>${typeBadge[s.server_type]||s.server_type}</td>
+      <td><code style="font-size:.8rem;color:#fbbf24">${s.ip_address}</code></td>
+      <td style="font-size:.8rem;color:var(--text-muted)">${s.vm_name||'<span style="opacity:.35">—</span>'}</td>
+      <td style="font-size:.8rem;color:var(--text-muted)">${s.app_name||'<span style="opacity:.35">—</span>'}</td>
+      <td style="font-size:.8rem;color:var(--text-muted)">${s.app_db_type||'<span style="opacity:.35">—</span>'}</td>
+      <td onclick="event.stopPropagation()">
+        <button class="btn btn-icon btn-outline-secondary" onclick="deleteServer(${s.id},'${s.name}')" title="Elimina"><i class="bi bi-trash3" style="color:var(--danger)"></i></button>
+      </td>
+    </tr>`).join('');
 }
 
-document.querySelectorAll('[name="auth-type"]').forEach(r=>r.addEventListener('change',()=>{
-  document.getElementById('auth-pass-div').style.display = r.value==='password'&&r.checked?'':'none';
-  document.getElementById('auth-key-div').style.display  = r.value==='key'&&r.checked?'':'none';
-}));
-
-document.getElementById('f-has-vm').addEventListener('change', e=>{
-  document.getElementById('vmware-fields').style.display = e.target.checked ? '' : 'none';
-});
-
-function toggleDB() {
-  document.getElementById('db-fields').style.display = document.getElementById('f-db-type').value ? '' : 'none';
+async function openEdit(id) {
+  const s = await api('GET', `/api/servers/${id}`);
+  editingId = id;
+  document.getElementById('edit-title').textContent = s.name;
+  document.getElementById('e-name').value    = s.name||'';
+  document.getElementById('e-desc').value    = s.description||'';
+  document.getElementById('e-ip').value      = s.ip_address||'';
+  document.getElementById('e-type').value    = s.server_type||'linux';
+  document.getElementById('e-user').value    = s.username||'';
+  document.getElementById('e-pass').value    = '';
+  document.getElementById('e-vm').value      = s.vm_name||'';
+  document.getElementById('e-app').value     = s.app_name||'';
+  document.getElementById('e-db-type').value = s.app_db_type||'';
+  document.getElementById('e-db-name').value = s.app_db_name||'';
+  document.getElementById('e-db-user').value = s.app_db_user||'';
+  document.getElementById('e-port').value    = s.ssh_port||s.winrm_port||(s.server_type==='windows'?5985:22);
+  new bootstrap.Modal(document.getElementById('editServerModal')).show();
 }
 
-function addPath() {
-  const div = document.createElement('div');
-  div.className = 'input-group mb-2';
-  div.innerHTML = `<input class="form-control path-input" placeholder="${selectedType==='windows'?'C:\\\\TeamSystem\\\\Dati':'/opt/abulafia/data'}">
-    <button type="button" class="btn btn-outline-danger" onclick="this.parentNode.remove()"><i class="bi bi-trash"></i></button>`;
-  document.getElementById('paths-list').appendChild(div);
+async function testServerConn() {
+  const btn = document.getElementById('btn-test-server');
+  btn.disabled=true; btn.innerHTML='<span class="spinner-border spinner-border-sm"></span> Test…';
+  try { const r=await api('POST',`/api/servers/${editingId}/test`); showToast(r.message,'success'); }
+  catch(e) { showToast(e.message,'danger'); }
+  btn.disabled=false; btn.innerHTML='<i class="bi bi-wifi me-1"></i>Testa connessione';
 }
 
-function updateStepIndicators() {
-  for (let i=1;i<=totalSteps;i++) {
-    const el = document.getElementById(`step-ind-${i}`);
-    el.className = `step ${i===currentStep?'active':i<currentStep?'done':''}`;
-    if (i<currentStep) el.querySelector('.step-num').innerHTML='<i class="bi bi-check-lg"></i>';
-    else el.querySelector('.step-num').textContent=i;
-  }
-  document.getElementById('btn-prev').style.display = currentStep>1?'':'none';
-  document.getElementById('btn-next').style.display = currentStep<totalSteps?'':'none';
-  document.getElementById('btn-save').style.display = currentStep===totalSteps?'':'none';
+async function saveEdit() {
+  const type=document.getElementById('e-type').value, port=+document.getElementById('e-port').value;
+  const payload={name:document.getElementById('e-name').value,description:document.getElementById('e-desc').value,server_type:type,ip_address:document.getElementById('e-ip').value,ssh_port:type==='linux'?port:22,winrm_port:type==='windows'?port:5985,username:document.getElementById('e-user').value,password:document.getElementById('e-pass').value||null,vm_name:document.getElementById('e-vm').value||null,app_name:document.getElementById('e-app').value||null,app_db_type:document.getElementById('e-db-type').value||null,app_db_name:document.getElementById('e-db-name').value||null,app_db_user:document.getElementById('e-db-user').value||null};
+  try { await api('PUT',`/api/servers/${editingId}`,payload); bootstrap.Modal.getInstance(document.getElementById('editServerModal')).hide(); showToast('Server aggiornato'); loadServers(); }
+  catch(e) { showToast(e.message,'danger'); }
 }
 
-function showStep(n) {
-  for(let i=1;i<=totalSteps;i++) document.getElementById(`step-${i}`).style.display=i===n?'':'none';
-  currentStep=n; updateStepIndicators();
+async function deleteServer(id,name) {
+  if(!confirm(`Eliminare "${name}"?`)) return;
+  try { await api('DELETE',`/api/servers/${id}`); showToast(`Server "${name}" eliminato`); loadServers(); }
+  catch(e) { showToast(e.message,'danger'); }
 }
 
-function nextStep() {
-  if (currentStep===1 && !selectedType) { showToast('Seleziona il tipo di server','warning'); return; }
-  if (currentStep<totalSteps) showStep(currentStep+1);
-}
-function prevStep() { if(currentStep>1) showStep(currentStep-1); }
-
-async function loadVMHosts() {
-  const hosts = await api('GET','/api/servers/vmware-hosts');
-  const sel = document.getElementById('f-vmhost');
-  sel.innerHTML = '<option value="">— Seleziona host ESXi —</option>' +
-    hosts.map(h=>`<option value="${h.id}">${h.name} (${h.host})</option>`).join('');
-}
-loadVMHosts();
-
-async function loadVMs() {
-  const hostId = document.getElementById('f-vmhost').value;
-  if (!hostId) { showToast('Seleziona prima un host ESXi','warning'); return; }
-  try {
-    const vms = await api('GET', `/api/servers/vmware-hosts/${hostId}/vms`);
-    const dd = document.getElementById('vms-dropdown');
-    dd.style.display = '';
-    dd.innerHTML = vms.map(v=>`
-      <button type="button" class="list-group-item list-group-item-action" onclick="selectVM('${v.name}')">
-        ${v.name} <small class="text-muted">${v.guest_os||''}</small>
-      </button>`).join('');
-  } catch(e) { showToast(e.message,'danger'); }
-}
-function selectVM(name) {
-  document.getElementById('f-vm-name').value = name;
-  document.getElementById('vms-dropdown').style.display='none';
-}
-
-async function saveESXi() {
-  try {
-    await api('POST','/api/servers/vmware-hosts',{
-      name: document.getElementById('esxi-name').value,
-      host: document.getElementById('esxi-host').value,
-      port: +document.getElementById('esxi-port').value,
-      username: document.getElementById('esxi-user').value,
-      password: document.getElementById('esxi-pass').value,
-    });
-    bootstrap.Modal.getInstance(document.getElementById('modalESXi')).hide();
-    showToast('Host ESXi salvato');
-    loadVMHosts();
-  } catch(e) { showToast(e.message,'danger'); }
-}
+function toggleForm() { const w=document.getElementById('add-form-wrap'); w.style.display=w.style.display==='none'?'':'none'; if(w.style.display!=='none') w.scrollIntoView({behavior:'smooth',block:'start'}); }
+function selectType(type,el) { document.querySelectorAll('.type-card').forEach(c=>c.style.borderColor='var(--card-border)'); el.style.borderColor='var(--cri-red)'; selectedType=type; document.getElementById('windows-conn').style.display=type==='windows'?'':'none'; document.getElementById('linux-conn').style.display=type==='linux'?'':'none'; }
+document.querySelectorAll('[name="auth-type"]').forEach(r=>r.addEventListener('change',()=>{ document.getElementById('auth-pass-div').style.display=r.value==='password'&&r.checked?'':'none'; document.getElementById('auth-key-div').style.display=r.value==='key'&&r.checked?'':'none'; }));
+document.getElementById('f-has-vm').addEventListener('change',e=>{ document.getElementById('vmware-fields').style.display=e.target.checked?'':'none'; });
+function toggleDB(){ document.getElementById('db-fields').style.display=document.getElementById('f-db-type').value?'':'none'; }
+function addPath(){ const div=document.createElement('div'); div.className='input-group mb-2'; div.innerHTML=`<input class="form-control form-control-sm path-input" placeholder="${selectedType==='windows'?'C:\\\\Dati\\\\App':'/opt/app/data'}"><button type="button" class="btn btn-outline-secondary btn-sm" onclick="this.parentNode.remove()"><i class="bi bi-trash3"></i></button>`; document.getElementById('paths-list').appendChild(div); }
+function updateStepUI(){ for(let i=1;i<=totalSteps;i++){ const el=document.getElementById(`step-ind-${i}`); el.className=`wizard-step ${i===currentStep?'active':i<currentStep?'done':''}`; el.querySelector('.wizard-step-num').innerHTML=i<currentStep?'<i class="bi bi-check2"></i>':i; } document.getElementById('btn-prev').style.display=currentStep>1?'':'none'; document.getElementById('btn-next').style.display=currentStep<totalSteps?'':'none'; document.getElementById('btn-save').style.display=currentStep===totalSteps?'':'none'; }
+function showStep(n){ for(let i=1;i<=totalSteps;i++) document.getElementById(`step-${i}`).style.display=i===n?'':'none'; currentStep=n; updateStepUI(); }
+function nextStep(){ if(currentStep===1&&!selectedType){showToast('Seleziona il tipo di server','warning');return;} if(currentStep<totalSteps) showStep(currentStep+1); }
+function prevStep(){ if(currentStep>1) showStep(currentStep-1); }
+async function loadVMHosts(){ const hosts=await api('GET','/api/servers/vmware-hosts'); const sel=document.getElementById('f-vmhost'); sel.innerHTML='<option value="">— Seleziona host ESXi —</option>'+hosts.map(h=>`<option value="${h.id}">${h.name} (${h.host})</option>`).join(''); }
+async function loadVMs(){ const hostId=document.getElementById('f-vmhost').value; if(!hostId){showToast('Seleziona prima un host ESXi','warning');return;} try{ const vms=await api('GET',`/api/servers/vmware-hosts/${hostId}/vms`); const dd=document.getElementById('vms-dropdown'); dd.style.display=''; dd.innerHTML=vms.map(v=>`<button type="button" class="list-group-item list-group-item-action" onclick="selectVM('${v.name}')">${v.name} <small class="text-muted">${v.guest_os||''}</small></button>`).join(''); }catch(e){showToast(e.message,'danger');} }
+function selectVM(name){ document.getElementById('f-vm-name').value=name; document.getElementById('vms-dropdown').style.display='none'; }
+async function saveESXi(){ try{ await api('POST','/api/servers/vmware-hosts',{name:document.getElementById('esxi-name').value,host:document.getElementById('esxi-host').value,port:+document.getElementById('esxi-port').value,username:document.getElementById('esxi-user').value,password:document.getElementById('esxi-pass').value}); bootstrap.Modal.getInstance(document.getElementById('modalESXi')).hide(); showToast('Host ESXi salvato'); loadVMHosts(); }catch(e){showToast(e.message,'danger');} }
 
 document.getElementById('server-form').addEventListener('submit', async e=>{
   e.preventDefault();
-  const authType = document.querySelector('[name="auth-type"]:checked')?.value;
-  const payload = {
-    name: document.getElementById('f-name').value,
-    description: document.getElementById('f-desc').value,
-    server_type: selectedType,
-    ip_address: document.getElementById('f-ip').value,
-    vmware_host_id: document.getElementById('f-has-vm').checked ? +document.getElementById('f-vmhost').value||null : null,
-    vm_name: document.getElementById('f-has-vm').checked ? document.getElementById('f-vm-name').value : null,
-    app_name: document.getElementById('f-app-name').value,
-    app_data_paths: [...document.querySelectorAll('.path-input')].map(i=>i.value).filter(Boolean),
-    app_db_type: document.getElementById('f-db-type').value||null,
-    app_db_name: document.getElementById('f-db-name').value||null,
-    app_db_user: document.getElementById('f-db-user').value||null,
-    app_db_password: document.getElementById('f-db-pass').value||null,
-  };
-  if (selectedType==='linux') {
-    payload.ssh_port = +document.getElementById('f-ssh-port').value;
-    payload.username = document.getElementById('f-user-linux').value;
-    if (authType==='password') payload.password = document.getElementById('f-pass-linux').value;
-    else payload.ssh_key_path = document.getElementById('f-key-path').value;
-  } else {
-    payload.winrm_port = +document.getElementById('f-winrm-port').value;
-    payload.username = document.getElementById('f-user-win').value;
-    payload.password = document.getElementById('f-pass-win').value;
-  }
-  try {
-    const res = await api('POST','/api/servers', payload);
-    showToast(`Server "${res.name}" salvato con successo!`);
-    setTimeout(()=>{ window.location='/wizard/job'; }, 1500);
-  } catch(e) { showToast(e.message,'danger'); }
+  const authType=document.querySelector('[name="auth-type"]:checked')?.value;
+  const payload={name:document.getElementById('f-name').value,description:document.getElementById('f-desc').value,server_type:selectedType,ip_address:document.getElementById('f-ip').value,vmware_host_id:document.getElementById('f-has-vm').checked?+document.getElementById('f-vmhost').value||null:null,vm_name:document.getElementById('f-has-vm').checked?document.getElementById('f-vm-name').value:null,app_name:document.getElementById('f-app-name').value,app_data_paths:[...document.querySelectorAll('.path-input')].map(i=>i.value).filter(Boolean),app_db_type:document.getElementById('f-db-type').value||null,app_db_name:document.getElementById('f-db-name').value||null,app_db_user:document.getElementById('f-db-user').value||null,app_db_password:document.getElementById('f-db-pass').value||null};
+  if(selectedType==='linux'){payload.ssh_port=+document.getElementById('f-ssh-port').value;payload.username=document.getElementById('f-user-linux').value;if(authType==='password')payload.password=document.getElementById('f-pass-linux').value;else payload.ssh_key_path=document.getElementById('f-key-path').value;}
+  else{payload.winrm_port=+document.getElementById('f-winrm-port').value;payload.username=document.getElementById('f-user-win').value;payload.password=document.getElementById('f-pass-win').value;}
+  try{const res=await api('POST','/api/servers',payload);showToast(`Server "${res.name}" salvato!`);document.getElementById('add-form-wrap').style.display='none';loadServers();}
+  catch(e){showToast(e.message,'danger');}
 });
 
-showStep(1);
+loadServers(); loadVMHosts(); showStep(1);
 </script>
 {% endblock %}

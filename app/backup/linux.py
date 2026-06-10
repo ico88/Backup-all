@@ -1,4 +1,4 @@
-"""Backup dati applicativi da server Linux (Abulafia) via SSH/rsync."""
+"""Backup dati applicativi da server Linux via SSH/rsync."""
 import json
 import subprocess
 import paramiko

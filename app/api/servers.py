@@ -117,6 +117,83 @@ def create_server(data: ServerCreate, db: Session = Depends(get_db)):
     return {"id": s.id, "name": s.name}
 
 
+@router.put("/{server_id}")
+def update_server(server_id: int, data: ServerCreate, db: Session = Depends(get_db)):
+    s = db.get(Server, server_id)
+    if not s:
+        raise HTTPException(404, "Server non trovato")
+    s.name = data.name
+    s.description = data.description
+    s.server_type = data.server_type
+    s.ip_address = data.ip_address
+    s.vm_name = data.vm_name
+    s.vmware_host_id = data.vmware_host_id
+    s.ssh_port = data.ssh_port
+    s.winrm_port = data.winrm_port
+    s.username = data.username
+    if data.password:
+        s.password_enc = encrypt(data.password)
+    s.ssh_key_path = data.ssh_key_path
+    s.app_name = data.app_name
+    s.app_data_paths = json.dumps(data.app_data_paths or [])
+    s.app_db_type = data.app_db_type
+    s.app_db_name = data.app_db_name
+    s.app_db_user = data.app_db_user
+    if data.app_db_password:
+        s.app_db_password_enc = encrypt(data.app_db_password)
+    db.commit()
+    db.refresh(s)
+    return _serialize(s)
+
+
+@router.post("/{server_id}/test")
+def test_server(server_id: int, db: Session = Depends(get_db)):
+    import subprocess, os, shutil, socket, logging
+    log = logging.getLogger("backup-all.test")
+    s = db.get(Server, server_id)
+    if not s:
+        raise HTTPException(404, "Server non trovato")
+    password = decrypt(s.password_enc) if s.password_enc else ""
+    if s.server_type == "linux":
+        port = s.ssh_port or 22
+        has_sshpass = shutil.which("sshpass") is not None
+        if password and not has_sshpass:
+            raise HTTPException(500, "sshpass non installato: sudo apt install sshpass")
+        env = os.environ.copy()
+        if password and has_sshpass:
+            env["SSHPASS"] = password
+            cmd = ["sshpass", "-e", "ssh"]
+        else:
+            cmd = ["ssh"]
+        cmd += ["-p", str(port), "-o", "ConnectTimeout=8",
+                "-o", "StrictHostKeyChecking=no",
+                f"{s.username}@{s.ip_address}", "echo OK"]
+        log.info("Test SSH: %s@%s:%s", s.username, s.ip_address, port)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=15)
+        except subprocess.TimeoutExpired:
+            raise HTTPException(500, f"Timeout: {s.ip_address}:{port} non risponde")
+        log.info("rc=%d stdout=%r stderr=%r", result.returncode, result.stdout[:200], result.stderr[:200])
+        if result.returncode == 0 and "OK" in result.stdout:
+            return {"ok": True, "message": f"Connessione SSH a {s.ip_address}:{port} riuscita ✓"}
+        stderr = result.stderr.strip()
+        if "Permission denied" in stderr or "Authentication failed" in stderr:
+            raise HTTPException(500, f"Credenziali errate per {s.username}@{s.ip_address}")
+        elif "Connection refused" in stderr:
+            raise HTTPException(500, f"Connessione rifiutata su {s.ip_address}:{port}")
+        elif "No route to host" in stderr or "Network unreachable" in stderr:
+            raise HTTPException(500, f"Host {s.ip_address} non raggiungibile")
+        raise HTTPException(500, f"SSH error (rc={result.returncode}): {stderr[:200]}")
+    else:
+        port = s.winrm_port or 5985
+        try:
+            with socket.create_connection((s.ip_address, port), timeout=5):
+                pass
+            return {"ok": True, "message": f"Porta WinRM {port} raggiungibile su {s.ip_address} ✓"}
+        except Exception as e:
+            raise HTTPException(500, f"WinRM non raggiungibile su {s.ip_address}:{port} — {e}")
+
+
 @router.delete("/{server_id}")
 def delete_server(server_id: int, db: Session = Depends(get_db)):
     s = db.get(Server, server_id)
@@ -131,6 +208,8 @@ def _serialize(s: Server) -> dict:
     return {
         "id": s.id, "name": s.name, "description": s.description,
         "server_type": s.server_type, "ip_address": s.ip_address,
+        "ssh_port": s.ssh_port, "winrm_port": s.winrm_port,
+        "username": s.username,
         "vm_name": s.vm_name, "vmware_host_id": s.vmware_host_id,
         "app_name": s.app_name,
         "app_data_paths": json.loads(s.app_data_paths or "[]"),
