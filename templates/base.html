@@ -280,7 +280,8 @@ async function api(method, url, body) {
     if (r.status === 401) { window.location.href='/login'; return; }
     throw new Error(e.detail || r.statusText);
   }
-  return r.json();
+  if (r.status === 204 || r.headers.get('content-length') === '0') return null;
+  return r.json().catch(() => null);
 }
 
 function toggleUserMenu(el) {

@@ -53,7 +53,7 @@ def _ensure_admin_exists():
         db.close()
 
 
-app = FastAPI(title="Backup-All", lifespan=lifespan)
+app = FastAPI(title="Backup-All", lifespan=lifespan, docs_url="/api/swagger", redoc_url=None)
 app.add_middleware(SessionMiddleware, secret_key=_secret, https_only=False, max_age=86400)
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
