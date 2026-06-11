@@ -155,6 +155,7 @@ def backup_system_wbadmin(server, dest_cfg, timestamp: str, log_fn=None) -> None
     script_path = f"C:\\Windows\\Temp\\{task_name}.ps1"
     script_b64_path = f"C:\\Windows\\Temp\\{task_name}.b64"
     log_path = f"C:\\Windows\\Temp\\{task_name}.log"
+    outer_log_path = f"C:\\Windows\\Temp\\{task_name}.outer.log"
     server_password = decrypt(server.password_enc)
 
     backup_script = f"""
@@ -241,6 +242,7 @@ $ErrorActionPreference = 'Stop'
 Remove-Item {_ps_quote(script_b64_path)} -Force -ErrorAction SilentlyContinue
 Remove-Item {_ps_quote(script_path)} -Force -ErrorAction SilentlyContinue
 Remove-Item {_ps_quote(log_path)} -Force -ErrorAction SilentlyContinue
+Remove-Item {_ps_quote(outer_log_path)} -Force -ErrorAction SilentlyContinue
 New-Item -ItemType File -Path {_ps_quote(script_b64_path)} -Force | Out-Null
 """
     init_result = session.run_ps(init_upload_cmd)
@@ -274,7 +276,7 @@ $scriptBytes = [Convert]::FromBase64String((Get-Content $scriptB64Path -Raw))
 [System.IO.File]::WriteAllBytes($scriptPath, $scriptBytes)
 $scriptText = Get-Content $scriptPath -Raw
 Set-Content -Path $scriptPath -Value $scriptText -Encoding UTF8
-$taskCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" >> `"{_ps_quote(log_path)[1:-1]}`" 2>&1"
+$taskCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" >> `"{_ps_quote(outer_log_path)[1:-1]}`" 2>&1"
 $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument "/c $taskCommand"
 $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1)
 $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 24) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
@@ -300,10 +302,15 @@ $log = ''
 if (Test-Path {_ps_quote(log_path)}) {{
     $log = Get-Content {_ps_quote(log_path)} -Raw
 }}
+$outerLog = ''
+if (Test-Path {_ps_quote(outer_log_path)}) {{
+    $outerLog = Get-Content {_ps_quote(outer_log_path)} -Raw
+}}
 Write-Output "STATE=$($task.State)"
 Write-Output "LAST_RESULT=$($info.LastTaskResult)"
 Write-Output "LOG_BEGIN"
 Write-Output $log
+Write-Output $outerLog
 Write-Output "LOG_END"
 """
         poll_result = session.run_ps(poll_cmd)
@@ -325,6 +332,7 @@ Unregister-ScheduledTask -TaskName {_ps_quote(task_name)} -Confirm:$false -Error
 Remove-Item {_ps_quote(script_path)} -Force -ErrorAction SilentlyContinue
 Remove-Item {_ps_quote(script_b64_path)} -Force -ErrorAction SilentlyContinue
 Remove-Item {_ps_quote(log_path)} -Force -ErrorAction SilentlyContinue
+Remove-Item {_ps_quote(outer_log_path)} -Force -ErrorAction SilentlyContinue
 """
     session.run_ps(cleanup_cmd)
 
