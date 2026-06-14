@@ -31,6 +31,15 @@ def list_jobs(db: Session = Depends(get_db)):
     return [_serialize(j) for j in jobs]
 
 
+@router.get("/ovftool-check")
+def ovftool_check():
+    try:
+        from app.backup.replication import _find_ovftool
+        return {"available": True, "path": _find_ovftool()}
+    except Exception as e:
+        return {"available": False, "error": str(e)}
+
+
 @router.post("", status_code=201)
 def create_job(data: ReplicationCreate, db: Session = Depends(get_db)):
     j = VMReplicationJob(**data.model_dump())
@@ -149,6 +158,7 @@ def _serialize_run(r: VMReplicationRun) -> dict:
         "finished_at": r.finished_at.isoformat() if r.finished_at else None,
         "status": r.status, "triggered_by": r.triggered_by,
         "error_message": r.error_message,
+        "log_output": r.log_output,
     }
 
 
@@ -182,6 +192,7 @@ def _execute_sync(job_id: int, triggered_by: str = "scheduler"):
         except Exception as e:
             run.status = ReplicationSyncStatus.FAILED
             run.error_message = str(e)
+            logs.append(f"[ERROR] {e}")
             run.log_output = "\n".join(logs)
             j.last_sync_status = ReplicationSyncStatus.FAILED
         finally:

@@ -144,6 +144,21 @@
     </div>
   </div>
 </div>
+
+<!-- Modal log replica -->
+<div class="modal fade" id="replLogModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title"><i class="bi bi-journal-text me-2"></i>Log replica</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="repl-log-body" class="d-flex flex-column gap-3"></div>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -318,6 +333,9 @@ function renderCard(j) {
         <button class="btn btn-sm btn-outline-secondary" onclick="syncNow(${j.id})" ${isPaused ? 'disabled' : ''}>
           <i class="bi bi-arrow-repeat me-1"></i>Sync ora
         </button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="openLogs(${j.id})">
+          <i class="bi bi-journal-text me-1"></i>Log
+        </button>
         <button class="btn btn-sm btn-danger ms-auto" onclick="openPromote(${j.id})" ${isFailover ? 'disabled' : ''}>
           <i class="bi bi-lightning-fill me-1"></i>Failover manuale
         </button>
@@ -363,6 +381,46 @@ async function syncNow(id) {
     showToast('Sync avviato in background — aggiornamento tra qualche secondo…', 'info');
     setTimeout(loadJobs, 3000);
   } catch(e) { showToast(e.message, 'danger'); }
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+async function openLogs(id) {
+  const body = document.getElementById('repl-log-body');
+  body.innerHTML = '<div class="text-muted">Caricamento log...</div>';
+  new bootstrap.Modal(document.getElementById('replLogModal')).show();
+  try {
+    const runs = await api('GET', `/api/replication/${id}/runs`);
+    if (!runs.length) {
+      body.innerHTML = '<div class="text-muted">Nessun run registrato per questa replica.</div>';
+      return;
+    }
+    body.innerHTML = runs.map(r => {
+      const started = r.started_at ? new Date(r.started_at).toLocaleString('it-IT') : '—';
+      const finished = r.finished_at ? new Date(r.finished_at).toLocaleString('it-IT') : '—';
+      const logText = r.log_output || r.error_message || 'Nessun log disponibile.';
+      return `
+        <div class="border border-secondary rounded p-3">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2" style="font-size:.82rem">
+            ${syncStatusBadge(r.status)}
+            <span class="text-muted">trigger:</span><span>${escapeHtml(r.triggered_by)}</span>
+            <span class="text-muted">inizio:</span><span>${started}</span>
+            <span class="text-muted">fine:</span><span>${finished}</span>
+          </div>
+          ${r.error_message ? `<div class="alert alert-danger py-2 mb-2">${escapeHtml(r.error_message)}</div>` : ''}
+          <pre class="mb-0 p-3 rounded" style="max-height:420px;overflow:auto;background:#05070b;color:#d1d5db;font-size:.78rem;white-space:pre-wrap">${escapeHtml(logText)}</pre>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    body.innerHTML = `<div class="alert alert-danger">Errore caricamento log: ${escapeHtml(e.message)}</div>`;
+  }
 }
 
 function openPromote(id) {
