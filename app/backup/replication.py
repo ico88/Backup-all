@@ -66,6 +66,8 @@ def _classify_ovftool_error(output: str) -> list[str]:
     hints = []
     checks = [
         (("no network mapping specified", "ovf networks", "target networks"), "Mappatura rete mancante: indica a ovftool su quale port group dell'host destinazione collegare la rete della VM."),
+        (("unsupported hardware family", "vmx-"), "Compatibilita hardware VM: l'host ESXi destinazione e' troppo vecchio per la virtual hardware version della VM sorgente."),
+        (("operating system identifier", "is not supported on the selected host"), "Compatibilita guest OS: l'host destinazione non riconosce pienamente il tipo sistema operativo della VM."),
         (("license", "restrictedversion", "current license"), "Licenza/versione ESXi: l'host potrebbe bloccare operazioni richieste da ovftool."),
         (("permission", "no permission", "access denied", "login failed", "authentication"), "Credenziali/permessi: verifica utente ESXi, password e privilegi su VM/datastore."),
         (("unable to connect", "connection refused", "timed out", "could not resolve"), "Rete/DNS: verifica raggiungibilità host ESXi, porta 443 e nome/IP configurati."),
