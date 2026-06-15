@@ -133,6 +133,7 @@ def sync_vm(job, log_fn=None) -> str:
         "--powerOffSource",           # snapshot online, poi spegne temporaneamente per export
         "--overwrite",                # sovrascrive VM-B se esiste già
         "--skipManifestCheck",
+        '--net:VM Network=LAN',
         f"--name={job.target_vm_name}",
         "--X:waitForIp",
     ]
