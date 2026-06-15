@@ -8,6 +8,7 @@ from app.database import get_db
 from app.models import VMReplicationJob, VMReplicationRun, ReplicationStatus, ReplicationSyncStatus, FailoverState
 
 router = APIRouter(prefix="/api/replication", tags=["replication"])
+RUN_LOG_TAIL_CHARS = 50000
 
 
 class ReplicationCreate(BaseModel):
@@ -152,13 +153,19 @@ def _serialize(j: VMReplicationJob) -> dict:
 
 
 def _serialize_run(r: VMReplicationRun) -> dict:
+    log_output = r.log_output
+    if log_output and len(log_output) > RUN_LOG_TAIL_CHARS:
+        log_output = (
+            f"... log precedente omesso, mostro gli ultimi {RUN_LOG_TAIL_CHARS} caratteri ...\n"
+            + log_output[-RUN_LOG_TAIL_CHARS:]
+        )
     return {
         "id": r.id, "job_id": r.job_id,
         "started_at": r.started_at.isoformat() if r.started_at else None,
         "finished_at": r.finished_at.isoformat() if r.finished_at else None,
         "status": r.status, "triggered_by": r.triggered_by,
         "error_message": r.error_message,
-        "log_output": r.log_output,
+        "log_output": log_output,
     }
 
 

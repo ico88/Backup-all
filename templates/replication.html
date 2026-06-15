@@ -419,7 +419,10 @@ async function openLogs(id) {
         </div>`;
     }).join('');
   } catch(e) {
-    body.innerHTML = `<div class="alert alert-danger">Errore caricamento log: ${escapeHtml(e.message)}</div>`;
+    const msg = e.message === 'Failed to fetch'
+      ? 'Impossibile raggiungere l API dei log. Verifica che il servizio sia riavviato e che la pagina sia aperta sullo stesso host/porta dell applicativo.'
+      : e.message;
+    body.innerHTML = `<div class="alert alert-danger">Errore caricamento log: ${escapeHtml(msg)}</div>`;
   }
 }
 
