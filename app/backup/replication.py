@@ -135,7 +135,7 @@ def sync_vm(job, log_fn=None) -> str:
         "--powerOffSource",           # snapshot online, poi spegne temporaneamente per export
         "--overwrite",                # sovrascrive VM-B se esiste già
         "--skipManifestCheck",
-        "--maxVirtualHardwareVersion=vmx-10",
+        "--maxVirtualHardwareVersion=10",
         '--net:VM Network=LAN',
         f"--name={job.target_vm_name}",
         "--X:waitForIp",
@@ -155,7 +155,7 @@ def sync_vm(job, log_fn=None) -> str:
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
-            env=os.environ.copy(),
+            env={**os.environ.copy(), "LC_ALL": "C", "LANG": "C", "LC_CTYPE": "C"},
         )
     except FileNotFoundError:
         raise RuntimeError(f"ovftool non eseguibile o non trovato: {ovftool}")
