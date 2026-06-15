@@ -68,6 +68,7 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     j = db.get(VMReplicationJob, job_id)
     if not j:
         raise HTTPException(404, "Job non trovato")
+    db.query(VMReplicationRun).filter_by(job_id=job_id).delete(synchronize_session=False)
     db.delete(j)
     db.commit()
     _reload_scheduler()

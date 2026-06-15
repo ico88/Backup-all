@@ -137,7 +137,9 @@ class VMReplicationJob(Base):
 
     source_host = relationship("VMwareHost", foreign_keys=[source_host_id])
     target_host = relationship("VMwareHost", foreign_keys=[target_host_id])
-    runs = relationship("VMReplicationRun", back_populates="job", order_by="VMReplicationRun.started_at.desc()")
+    runs = relationship("VMReplicationRun", back_populates="job",
+                        order_by="VMReplicationRun.started_at.desc()",
+                        cascade="all, delete-orphan")
 
 
 class VMReplicationRun(Base):
