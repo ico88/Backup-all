@@ -166,6 +166,8 @@
 let vmwareHosts = [];
 let replJobs = [];
 let promoteJobId = null;
+let replLogRefreshTimer = null;
+let currentLogJobId = null;
 
 // ── Init ──────────────────────────────────────────────
 async function init() {
@@ -393,37 +395,83 @@ function escapeHtml(value) {
 }
 
 async function openLogs(id) {
+  currentLogJobId = id;
+  if (replLogRefreshTimer) clearInterval(replLogRefreshTimer);
   const body = document.getElementById('repl-log-body');
   body.innerHTML = '<div class="text-muted">Caricamento log...</div>';
-  new bootstrap.Modal(document.getElementById('replLogModal')).show();
+  const modalEl = document.getElementById('replLogModal');
+  new bootstrap.Modal(modalEl).show();
+  await refreshLogs(id);
+  replLogRefreshTimer = setInterval(() => refreshLogs(id), 3000);
+  modalEl.addEventListener('hidden.bs.modal', () => {
+    if (replLogRefreshTimer) clearInterval(replLogRefreshTimer);
+    replLogRefreshTimer = null;
+    currentLogJobId = null;
+  }, { once: true });
+}
+
+async function refreshLogs(id) {
+  if (currentLogJobId !== id) return;
+  const body = document.getElementById('repl-log-body');
   try {
     const runs = await api('GET', `/api/replication/${id}/runs`);
     if (!runs.length) {
       body.innerHTML = '<div class="text-muted">Nessun run registrato per questa replica.</div>';
       return;
     }
-    body.innerHTML = runs.map(r => {
+    const hasRunning = runs.some(r => r.status === 'running');
+    body.innerHTML = `<div class="accordion" id="repl-log-accordion">
+      ${hasRunning ? '<div class="alert alert-dark-info mb-3"><i class="bi bi-arrow-repeat spin me-2"></i>Replica in corso: log aggiornato ogni 3 secondi.</div>' : ''}
+      ${runs.map((r, idx) => {
       const started = r.started_at ? new Date(r.started_at).toLocaleString('it-IT') : '—';
       const finished = r.finished_at ? new Date(r.finished_at).toLocaleString('it-IT') : '—';
       const logText = r.log_output || r.error_message || 'Nessun log disponibile.';
+      const collapseId = `repl-log-run-${r.id}`;
+      const isLatest = idx === 0;
+      const summary = firstUsefulLogLine(logText);
       return `
-        <div class="border border-secondary rounded p-3">
-          <div class="d-flex flex-wrap align-items-center gap-2 mb-2" style="font-size:.82rem">
-            ${syncStatusBadge(r.status)}
-            <span class="text-muted">trigger:</span><span>${escapeHtml(r.triggered_by)}</span>
-            <span class="text-muted">inizio:</span><span>${started}</span>
-            <span class="text-muted">fine:</span><span>${finished}</span>
+        <div class="accordion-item bg-dark text-light border-secondary">
+          <h2 class="accordion-header">
+            <button class="accordion-button ${isLatest ? '' : 'collapsed'} bg-dark text-light" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+              <span class="me-2">${syncStatusBadge(r.status)}</span>
+              <span class="me-2">${started}</span>
+              <span class="text-muted text-truncate" style="max-width:520px">${escapeHtml(summary)}</span>
+            </button>
+          </h2>
+          <div id="${collapseId}" class="accordion-collapse collapse ${isLatest ? 'show' : ''}" data-bs-parent="#repl-log-accordion">
+            <div class="accordion-body">
+              <div class="d-flex flex-wrap align-items-center gap-2 mb-2" style="font-size:.82rem">
+                <span class="text-muted">trigger:</span><span>${escapeHtml(r.triggered_by)}</span>
+                <span class="text-muted">inizio:</span><span>${started}</span>
+                <span class="text-muted">fine:</span><span>${finished}</span>
+              </div>
+              ${r.error_message ? `<div class="alert alert-danger py-2 mb-2">${escapeHtml(r.error_message)}</div>` : ''}
+              <pre class="repl-log-pre mb-0 p-3 rounded" style="max-height:${isLatest ? '65vh' : '320px'};overflow:auto;background:#05070b;color:#d1d5db;font-size:.78rem;white-space:pre-wrap">${escapeHtml(logText)}</pre>
+            </div>
           </div>
-          ${r.error_message ? `<div class="alert alert-danger py-2 mb-2">${escapeHtml(r.error_message)}</div>` : ''}
-          <pre class="mb-0 p-3 rounded" style="max-height:420px;overflow:auto;background:#05070b;color:#d1d5db;font-size:.78rem;white-space:pre-wrap">${escapeHtml(logText)}</pre>
         </div>`;
-    }).join('');
+      }).join('')}
+    </div>`;
+    if (hasRunning) {
+      const latestPre = body.querySelector('.accordion-collapse.show .repl-log-pre');
+      if (latestPre) latestPre.scrollTop = latestPre.scrollHeight;
+    }
+    if (!hasRunning && replLogRefreshTimer) {
+      clearInterval(replLogRefreshTimer);
+      replLogRefreshTimer = null;
+    }
   } catch(e) {
     const msg = e.message === 'Failed to fetch'
       ? 'Impossibile raggiungere l API dei log. Verifica che il servizio sia riavviato e che la pagina sia aperta sullo stesso host/porta dell applicativo.'
       : e.message;
     body.innerHTML = `<div class="alert alert-danger">Errore caricamento log: ${escapeHtml(msg)}</div>`;
   }
+}
+
+function firstUsefulLogLine(logText) {
+  const lines = String(logText || '').split('\n').map(x => x.trim()).filter(Boolean);
+  return lines.find(x => x.includes('[ERROR]')) || lines.find(x => x.includes('[INFO]')) || lines[0] || 'Nessun log disponibile.';
 }
 
 function openPromote(id) {

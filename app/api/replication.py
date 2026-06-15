@@ -3,12 +3,15 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
+import time
 
 from app.database import get_db
 from app.models import VMReplicationJob, VMReplicationRun, ReplicationStatus, ReplicationSyncStatus, FailoverState
 
 router = APIRouter(prefix="/api/replication", tags=["replication"])
 RUN_LOG_TAIL_CHARS = 50000
+LIVE_LOG_FLUSH_SEC = 3
+LIVE_LOG_FLUSH_LINES = 20
 
 
 class ReplicationCreate(BaseModel):
@@ -188,9 +191,25 @@ def _execute_sync(job_id: int, triggered_by: str = "scheduler"):
         db.commit()
 
         logs = []
+        last_flush = time.monotonic()
         start = datetime.now(timezone.utc)
+
+        def append_live_log(message: str, force: bool = False):
+            nonlocal last_flush
+            logs.append(message)
+            now = time.monotonic()
+            should_flush = (
+                force
+                or len(logs) % LIVE_LOG_FLUSH_LINES == 0
+                or now - last_flush >= LIVE_LOG_FLUSH_SEC
+            )
+            if should_flush:
+                run.log_output = "\n".join(logs)
+                db.commit()
+                last_flush = now
+
         try:
-            output = sync_vm(j, log_fn=lambda m: logs.append(m))
+            output = sync_vm(j, log_fn=append_live_log)
             run.status = ReplicationSyncStatus.SUCCESS
             run.log_output = "\n".join(logs)
             j.last_sync_status = ReplicationSyncStatus.SUCCESS
@@ -200,7 +219,7 @@ def _execute_sync(job_id: int, triggered_by: str = "scheduler"):
         except Exception as e:
             run.status = ReplicationSyncStatus.FAILED
             run.error_message = str(e)
-            logs.append(f"[ERROR] {e}")
+            append_live_log(f"[ERROR] {e}", force=True)
             run.log_output = "\n".join(logs)
             j.last_sync_status = ReplicationSyncStatus.FAILED
         finally:
