@@ -65,9 +65,10 @@ def _classify_ovftool_error(output: str) -> list[str]:
     text = output.lower()
     hints = []
     checks = [
+        (("no network mapping specified", "ovf networks", "target networks"), "Mappatura rete mancante: indica a ovftool su quale port group dell'host destinazione collegare la rete della VM."),
         (("license", "restrictedversion", "current license"), "Licenza/versione ESXi: l'host potrebbe bloccare operazioni richieste da ovftool."),
         (("permission", "no permission", "access denied", "login failed", "authentication"), "Credenziali/permessi: verifica utente ESXi, password e privilegi su VM/datastore."),
-        (("unable to connect", "connection refused", "timed out", "could not resolve", "network"), "Rete/DNS: verifica raggiungibilità host ESXi, porta 443 e nome/IP configurati."),
+        (("unable to connect", "connection refused", "timed out", "could not resolve"), "Rete/DNS: verifica raggiungibilità host ESXi, porta 443 e nome/IP configurati."),
         (("datastore", "no space", "insufficient disk", "not enough space"), "Datastore: verifica nome datastore destinazione e spazio disponibile."),
         (("already exists", "overwrite"), "VM destinazione: esiste già o non può essere sovrascritta; verifica nome VM standby e permessi."),
         (("ssl", "certificate", "thumbprint"), "SSL/certificato: verifica accesso HTTPS agli host ESXi o opzione noSSLVerify."),
