@@ -5,6 +5,7 @@ import time
 import socket
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 
 from app.crypto import decrypt
@@ -16,6 +17,32 @@ OVFTOOL_PATHS = [
     "/usr/bin/ovftool",
     "/opt/vmware/ovftool/ovftool",
 ]
+
+_ACTIVE_PROCS: dict[int, subprocess.Popen] = {}
+_ACTIVE_PROCS_LOCK = threading.Lock()
+
+
+def _register_proc(job_id: int, proc: subprocess.Popen):
+    with _ACTIVE_PROCS_LOCK:
+        _ACTIVE_PROCS[job_id] = proc
+
+
+def _unregister_proc(job_id: int):
+    with _ACTIVE_PROCS_LOCK:
+        _ACTIVE_PROCS.pop(job_id, None)
+
+
+def cancel_sync(job_id: int) -> bool:
+    with _ACTIVE_PROCS_LOCK:
+        proc = _ACTIVE_PROCS.get(job_id)
+    if not proc or proc.poll() is not None:
+        return False
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    return True
 
 
 def _find_ovftool() -> str:
@@ -163,22 +190,30 @@ def sync_vm(job, log_fn=None) -> str:
         raise RuntimeError(f"Permesso negato eseguendo ovftool: {ovftool}")
 
     assert proc.stdout is not None
-    last_progress_at = time.monotonic()
-    for line in proc.stdout:
-        line = line.rstrip()
-        if not line:
-            continue
-        output_lines.append(line)
-        _emit(log_fn, f"ovftool: {line}")
+    _register_proc(job.id, proc)
+    try:
         last_progress_at = time.monotonic()
+        for line in proc.stdout:
+            line = line.rstrip()
+            if not line:
+                continue
+            output_lines.append(line)
+            _emit(log_fn, f"ovftool: {line}")
+            last_progress_at = time.monotonic()
 
-    if time.monotonic() - last_progress_at > 60:
-        _emit(log_fn, "ovftool non ha prodotto output recente prima della chiusura.", "WARNING")
+        if time.monotonic() - last_progress_at > 60:
+            _emit(log_fn, "ovftool non ha prodotto output recente prima della chiusura.", "WARNING")
 
-    proc.wait()
+        proc.wait()
+    finally:
+        _unregister_proc(job.id)
     output = "\n".join(output_lines)
     duration = int(time.monotonic() - started)
     _emit(log_fn, f"ovftool terminato con codice {proc.returncode} dopo {duration}s")
+
+    if proc.returncode is not None and proc.returncode < 0:
+        _emit(log_fn, "Replica interrotta manualmente: processo ovftool terminato.", "WARNING")
+        raise RuntimeError("Replica interrotta manualmente.")
 
     if proc.returncode != 0:
         hints = _classify_ovftool_error(output)

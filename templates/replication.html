@@ -338,6 +338,10 @@ function renderCard(j) {
         <button class="btn btn-sm btn-outline-secondary" onclick="openLogs(${j.id})">
           <i class="bi bi-journal-text me-1"></i>Log
         </button>
+        ${j.last_sync_status === 'running' ? `
+        <button class="btn btn-sm btn-outline-danger" onclick="cancelReplication(${j.id})">
+          <i class="bi bi-stop-circle me-1"></i>Interrompi
+        </button>` : ''}
         <button class="btn btn-sm btn-danger ms-auto" onclick="openPromote(${j.id})" ${isFailover ? 'disabled' : ''}>
           <i class="bi bi-lightning-fill me-1"></i>Failover manuale
         </button>
@@ -420,8 +424,16 @@ async function refreshLogs(id) {
       return;
     }
     const hasRunning = runs.some(r => r.status === 'running');
-    body.innerHTML = `<div class="accordion" id="repl-log-accordion">
-      ${hasRunning ? '<div class="alert alert-dark-info mb-3"><i class="bi bi-arrow-repeat spin me-2"></i>Replica in corso: log aggiornato ogni 3 secondi.</div>' : ''}
+    body.innerHTML = `
+      <div class="d-flex align-items-center justify-content-between gap-3 mb-3 p-3 rounded" style="background:#111722;border:1px solid #243044">
+        <div style="font-size:.86rem;color:#93c5fd">
+          ${hasRunning
+            ? '<i class="bi bi-arrow-repeat spin me-2"></i>Replica in corso: log aggiornato ogni 3 secondi.'
+            : '<i class="bi bi-check-circle me-2"></i>Nessuna replica in corso.'}
+        </div>
+        ${hasRunning ? `<button class="btn btn-sm btn-outline-danger" onclick="cancelReplication(${id})"><i class="bi bi-stop-circle me-1"></i>Interrompi replica</button>` : ''}
+      </div>
+      <div class="accordion" id="repl-log-accordion">
       ${runs.map((r, idx) => {
       const started = r.started_at ? new Date(r.started_at).toLocaleString('it-IT') : '—';
       const finished = r.finished_at ? new Date(r.finished_at).toLocaleString('it-IT') : '—';
@@ -466,6 +478,18 @@ async function refreshLogs(id) {
       ? 'Impossibile raggiungere l API dei log. Verifica che il servizio sia riavviato e che la pagina sia aperta sullo stesso host/porta dell applicativo.'
       : e.message;
     body.innerHTML = `<div class="alert alert-danger">Errore caricamento log: ${escapeHtml(msg)}</div>`;
+  }
+}
+
+async function cancelReplication(id) {
+  if (!confirm('Interrompere la replica in corso? Il trasferimento ovftool verrà terminato.')) return;
+  try {
+    await api('POST', `/api/replication/${id}/cancel`);
+    showToast('Interruzione replica richiesta', 'warning');
+    await refreshLogs(id);
+    loadJobs();
+  } catch(e) {
+    showToast(e.message, 'danger');
   }
 }
 

@@ -111,6 +111,17 @@ def run_now(job_id: int, db: Session = Depends(get_db)):
     return {"ok": True, "message": "Sync avviato in background"}
 
 
+@router.post("/{job_id}/cancel")
+def cancel_run(job_id: int, db: Session = Depends(get_db)):
+    j = db.get(VMReplicationJob, job_id)
+    if not j:
+        raise HTTPException(404, "Job non trovato")
+    from app.backup.replication import cancel_sync
+    if not cancel_sync(job_id):
+        raise HTTPException(409, "Nessuna replica in corso da interrompere")
+    return {"ok": True, "message": "Interruzione replica richiesta"}
+
+
 @router.post("/{job_id}/promote")
 def promote(job_id: int, db: Session = Depends(get_db)):
     """Failover manuale: promuove VM standby a primaria."""
