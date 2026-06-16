@@ -106,6 +106,8 @@ def run_now(job_id: int, db: Session = Depends(get_db)):
     j = db.get(VMReplicationJob, job_id)
     if not j:
         raise HTTPException(404, "Job non trovato")
+    if j.last_sync_status == ReplicationSyncStatus.RUNNING:
+        raise HTTPException(409, "Esiste già una replica in corso o rimasta in stato running. Interrompila prima di avviarne una nuova.")
     import threading
     threading.Thread(target=_execute_sync, args=(job_id, "manual"), daemon=True).start()
     return {"ok": True, "message": "Sync avviato in background"}
@@ -118,7 +120,25 @@ def cancel_run(job_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Job non trovato")
     from app.backup.replication import cancel_sync
     if not cancel_sync(job_id):
-        raise HTTPException(409, "Nessuna replica in corso da interrompere")
+        stale_run = db.query(VMReplicationRun).filter_by(
+            job_id=job_id,
+            status=ReplicationSyncStatus.RUNNING,
+        ).order_by(VMReplicationRun.started_at.desc()).first()
+        if not stale_run and j.last_sync_status != ReplicationSyncStatus.RUNNING:
+            raise HTTPException(409, "Nessuna replica in corso da interrompere")
+        message = (
+            "Replica segnata come interrotta: nessun processo ovftool attivo risulta "
+            "registrato dall'app. Se il servizio e' stato riavviato, controlla manualmente "
+            "eventuali processi ovftool rimasti sul server."
+        )
+        if stale_run:
+            stale_run.status = ReplicationSyncStatus.FAILED
+            stale_run.finished_at = datetime.now(timezone.utc)
+            stale_run.error_message = message
+            stale_run.log_output = ((stale_run.log_output or "") + f"\n[WARNING] {message}").strip()
+        j.last_sync_status = ReplicationSyncStatus.FAILED
+        db.commit()
+        return {"ok": True, "message": message}
     return {"ok": True, "message": "Interruzione replica richiesta"}
 
 

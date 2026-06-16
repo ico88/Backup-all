@@ -484,8 +484,8 @@ async function refreshLogs(id) {
 async function cancelReplication(id) {
   if (!confirm('Interrompere la replica in corso? Il trasferimento ovftool verrà terminato.')) return;
   try {
-    await api('POST', `/api/replication/${id}/cancel`);
-    showToast('Interruzione replica richiesta', 'warning');
+    const res = await api('POST', `/api/replication/${id}/cancel`);
+    showToast(res?.message || 'Interruzione replica richiesta', 'warning');
     await refreshLogs(id);
     loadJobs();
   } catch(e) {
