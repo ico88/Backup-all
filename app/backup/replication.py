@@ -115,6 +115,87 @@ def _tail(text: str, limit: int = 3000) -> str:
     return "... output precedente omesso ...\n" + text[-limit:]
 
 
+def _get_vm_networks(host_cfg) -> list[str]:
+    """Legge le reti OVF della VM sorgente (nomi rete nei device)."""
+    try:
+        import ssl
+        from pyVim.connect import SmartConnect, Disconnect
+        from pyVmomi import vim
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        if not host_cfg.ssl_verify:
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        si = SmartConnect(host=host_cfg.host, port=host_cfg.port or 443,
+                          user=host_cfg.username, pwd=decrypt(host_cfg.password_enc),
+                          sslContext=ctx)
+        try:
+            content = si.RetrieveContent()
+            nets = set()
+            for dc in content.rootFolder.childEntity:
+                for net in getattr(dc, "network", []):
+                    nets.add(net.name)
+            return sorted(nets)
+        finally:
+            Disconnect(si)
+    except Exception:
+        return []
+
+
+def _get_host_networks(host_cfg) -> list[str]:
+    """Legge i port group disponibili sull'host ESXi destinazione."""
+    try:
+        import ssl
+        from pyVim.connect import SmartConnect, Disconnect
+        from pyVmomi import vim
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        if not host_cfg.ssl_verify:
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        si = SmartConnect(host=host_cfg.host, port=host_cfg.port or 443,
+                          user=host_cfg.username, pwd=decrypt(host_cfg.password_enc),
+                          sslContext=ctx)
+        try:
+            content = si.RetrieveContent()
+            nets = set()
+            for dc in content.rootFolder.childEntity:
+                for net in getattr(dc, "network", []):
+                    nets.add(net.name)
+            return sorted(nets)
+        finally:
+            Disconnect(si)
+    except Exception:
+        return []
+
+
+def _resolve_network_mapping(src_host, dst_host, vm_ovf_networks: list[str],
+                              target_network_override: str | None,
+                              log_fn=None) -> dict[str, str]:
+    """
+    Risolve automaticamente il mapping reti OVF → port group destinazione.
+    Ritorna {ovf_net_name: dst_portgroup_name}.
+    """
+    if target_network_override:
+        return {n: target_network_override for n in vm_ovf_networks}
+
+    dst_nets = _get_host_networks(dst_host)
+    if not dst_nets:
+        _emit(log_fn, "Impossibile leggere reti ESXi destinazione — mapping automatico saltato", "WARNING")
+        return {}
+
+    mapping = {}
+    for ovf_net in vm_ovf_networks:
+        if ovf_net in dst_nets:
+            mapping[ovf_net] = ovf_net
+            _emit(log_fn, f"Rete '{ovf_net}' → '{ovf_net}' (corrispondenza esatta)")
+        else:
+            # Usa il primo port group disponibile come fallback
+            fallback = dst_nets[0]
+            mapping[ovf_net] = fallback
+            _emit(log_fn, f"Rete '{ovf_net}' non trovata su destinazione → fallback '{fallback}' "
+                          f"(disponibili: {', '.join(dst_nets)})", "WARNING")
+    return mapping
+
+
 def _vi_url(host, vm_name: str, decrypt_fn=None) -> str:
     """Costruisce URL vi:// per ovftool."""
     password = decrypt(host.password_enc) if host.password_enc else ""
@@ -155,20 +236,29 @@ def sync_vm(job, log_fn=None) -> str:
     if job.target_datastore:
         dst_url += f"?ds=[{job.target_datastore}]"
 
+    # Risolvi mapping reti automaticamente
+    _emit(log_fn, "Rilevamento reti VM sorgente e port group destinazione...")
+    src_nets = _get_host_networks(src_host)
+    net_mapping = _resolve_network_mapping(
+        src_host, dst_host,
+        src_nets or ["VM Network"],
+        getattr(job, "target_network", None),
+        log_fn,
+    )
+
     cmd = [
         ovftool,
         "--noSSLVerify",
         "--acceptAllEulas",
-        "--powerOffSource",           # snapshot online, poi spegne temporaneamente per export
-        "--overwrite",                # sovrascrive VM-B se esiste già
+        "--powerOffSource",
+        "--overwrite",
         "--skipManifestCheck",
         "--maxVirtualHardwareVersion=10",
         f"--name={job.target_vm_name}",
         "--X:waitForIp",
     ]
-    if job.target_network:
-        # Mappa ogni rete OVF della VM sul port group di destinazione configurato
-        cmd.append(f"--net:VM Network={job.target_network}")
+    for ovf_net, dst_net in net_mapping.items():
+        cmd.append(f"--net:{ovf_net}={dst_net}")
     if job.target_datastore:
         cmd.append(f"--datastore={job.target_datastore}")
     cmd += [src_url, dst_url]
