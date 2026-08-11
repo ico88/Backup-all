@@ -252,7 +252,6 @@ def sync_vm(job, log_fn=None) -> str:
         "--acceptAllEulas",
         "--overwrite",
         "--skipManifestCheck",
-        "--maxVirtualHardwareVersion=10",
         f"--name={job.target_vm_name}",
         "--X:waitForIp",
     ]
