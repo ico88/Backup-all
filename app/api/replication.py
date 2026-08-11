@@ -22,6 +22,7 @@ class ReplicationCreate(BaseModel):
     target_host_id: int
     target_vm_name: str
     target_datastore: Optional[str] = None
+    target_network: Optional[str] = None
     cron_expression: str = "0 2 * * *"
     auto_failover: bool = False
     heartbeat_interval_sec: int = 60
@@ -172,6 +173,7 @@ def _serialize(j: VMReplicationJob) -> dict:
         "target_host_ip": j.target_host.host if j.target_host else None,
         "target_vm_name": j.target_vm_name,
         "target_datastore": j.target_datastore,
+        "target_network": j.target_network,
         "cron_expression": j.cron_expression,
         "status": j.status,
         "auto_failover": j.auto_failover,

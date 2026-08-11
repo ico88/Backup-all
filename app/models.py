@@ -114,7 +114,8 @@ class VMReplicationJob(Base):
     # Destinazione (VM standby)
     target_host_id = Column(Integer, ForeignKey("vmware_hosts.id"), nullable=False)
     target_vm_name = Column(String(255), nullable=False)
-    target_datastore = Column(String(255))  # datastore su ESXi target (opzionale)
+    target_datastore = Column(String(255))   # datastore su ESXi target (opzionale)
+    target_network = Column(String(255))     # port group destinazione, es. "VM Network"
 
     # Schedule
     cron_expression = Column(String(100), nullable=False, default="0 2 * * *")

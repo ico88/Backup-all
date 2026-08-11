@@ -36,6 +36,7 @@ def _migrate():
             ("backup_destinations", "smb_share", "VARCHAR(200)"),
             ("servers", "xcp_host_id", "INTEGER REFERENCES xcp_hosts(id)"),
             ("backup_runs", "backup_mode", "VARCHAR(20) DEFAULT 'full'"),
+            ("vm_replication_jobs", "target_network", "VARCHAR(255)"),
         ]
         for table, column, col_type in migrations:
             try:

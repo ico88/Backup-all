@@ -71,6 +71,11 @@
             <label class="form-label">Datastore destinazione <span class="text-muted fw-normal">(opzionale)</span></label>
             <input class="form-control" id="nr-datastore" placeholder="datastore1">
           </div>
+          <div class="col-md-6">
+            <label class="form-label">Port group rete destinazione <span class="text-muted fw-normal">(opzionale)</span></label>
+            <input class="form-control" id="nr-network" placeholder="VM Network">
+            <div class="form-text">Nome esatto del port group sull'ESXi destinazione. Lascia vuoto se coincide con la sorgente.</div>
+          </div>
 
           <div class="col-12"><hr class="border-secondary my-1"><small class="text-muted text-uppercase fw-semibold" style="font-size:.7rem;letter-spacing:.08em">Pianificazione</small></div>
           <div class="col-12">
@@ -367,6 +372,7 @@ async function createReplication() {
     target_host_id: +dstHost,
     target_vm_name: dstVm,
     target_datastore: document.getElementById('nr-datastore').value || null,
+    target_network: document.getElementById('nr-network').value || null,
     cron_expression: document.getElementById('nr-cron').value || '0 2 * * *',
     auto_failover: document.getElementById('nr-auto-failover').checked,
     heartbeat_interval_sec: +document.getElementById('nr-hb-interval').value || 60,

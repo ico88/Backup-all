@@ -163,10 +163,12 @@ def sync_vm(job, log_fn=None) -> str:
         "--overwrite",                # sovrascrive VM-B se esiste già
         "--skipManifestCheck",
         "--maxVirtualHardwareVersion=10",
-        '--net:VM Network=LAN',
         f"--name={job.target_vm_name}",
         "--X:waitForIp",
     ]
+    if job.target_network:
+        # Mappa ogni rete OVF della VM sul port group di destinazione configurato
+        cmd.append(f"--net:VM Network={job.target_network}")
     if job.target_datastore:
         cmd.append(f"--datastore={job.target_datastore}")
     cmd += [src_url, dst_url]
