@@ -250,7 +250,6 @@ def sync_vm(job, log_fn=None) -> str:
         ovftool,
         "--noSSLVerify",
         "--acceptAllEulas",
-        "--powerOffSource",
         "--overwrite",
         "--skipManifestCheck",
         "--maxVirtualHardwareVersion=10",
