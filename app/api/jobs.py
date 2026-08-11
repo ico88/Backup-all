@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.database import get_db
-from app.models import BackupJob, BackupType, JobStatus
+from app.models import BackupJob, BackupType, JobStatus, VmCbtState
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -114,6 +114,35 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     from app.scheduler import load_jobs_from_db
     load_jobs_from_db()
     return {"ok": True}
+
+
+@router.delete("/{job_id}/cbt", status_code=204)
+def reset_cbt_state(job_id: int, db: Session = Depends(get_db)):
+    """Resetta lo stato CBT: il prossimo backup sarà un backup completo."""
+    job = db.get(BackupJob, job_id)
+    if not job:
+        raise HTTPException(404, "Job non trovato")
+    cbt = db.query(VmCbtState).filter_by(job_id=job_id).first()
+    if cbt:
+        db.delete(cbt)
+        db.commit()
+    return None
+
+
+@router.get("/{job_id}/cbt")
+def get_cbt_state(job_id: int, db: Session = Depends(get_db)):
+    """Ritorna lo stato CBT del job."""
+    cbt = db.query(VmCbtState).filter_by(job_id=job_id).first()
+    if not cbt:
+        return {"enabled": False}
+    import json
+    states = json.loads(cbt.disk_states or "{}")
+    return {
+        "enabled": bool(states),
+        "disk_count": len(states),
+        "last_full_backup_path": cbt.last_full_backup_path,
+        "updated_at": cbt.updated_at.isoformat() if cbt.updated_at else None,
+    }
 
 
 def _serialize(j: BackupJob) -> dict:

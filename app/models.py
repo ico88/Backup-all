@@ -252,6 +252,7 @@ class BackupRun(Base):
     triggered_by = Column(String(50), default="scheduler")
     checksum_sha256 = Column(String(64))
     integrity_verified = Column(Boolean)
+    backup_mode = Column(String(20), default="full")  # "full" | "incremental_cbt"
 
     job = relationship("BackupJob", back_populates="runs")
     logs = relationship("BackupLog", back_populates="run",
@@ -269,3 +270,18 @@ class BackupLog(Base):
     message = Column(Text, nullable=False)
 
     run = relationship("BackupRun", back_populates="logs")
+
+
+class VmCbtState(Base):
+    """Stato CBT per backup incrementali ESXi: changeId per disco per job."""
+    __tablename__ = "vm_cbt_states"
+
+    id = Column(Integer, primary_key=True)
+    job_id = Column(Integer, ForeignKey("backup_jobs.id"), nullable=False, unique=True)
+    # JSON: {disk_key: {"change_id": "...", "filename": "..."}}
+    disk_states = Column(Text, nullable=False, default="{}")
+    last_full_backup_path = Column(Text)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    job = relationship("BackupJob", backref="cbt_state", uselist=False)

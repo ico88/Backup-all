@@ -157,6 +157,9 @@ async function loadJobs() {
             onclick="toggleStatus(${j.id},'${j.status}')">
             <i class="bi bi-${j.status==='active'?'pause':'play'}-fill"></i>
           </button>
+          ${j.backup_type==='vm_snapshot'?`<button class="btn btn-icon btn-outline-secondary" title="Reset CBT (forza backup completo)" onclick="resetCbt(${j.id},'${j.name}')">
+            <i class="bi bi-arrow-repeat" style="color:#a78bfa"></i>
+          </button>`:''}
           <button class="btn btn-icon btn-outline-secondary" title="Elimina" onclick="deleteJob(${j.id},'${j.name}')">
             <i class="bi bi-trash3" style="color:var(--danger)"></i>
           </button>
@@ -235,6 +238,14 @@ async function saveEdit() {
     bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
     showToast('Job aggiornato', 'success');
     loadJobs();
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
+async function resetCbt(id, name) {
+  if (!confirm(`Resettare lo stato CBT del job "${name}"?\nIl prossimo backup sarà un backup completo.`)) return;
+  try {
+    await api('DELETE', `/api/jobs/${id}/cbt`);
+    showToast('Stato CBT resettato — il prossimo backup sarà completo', 'info');
   } catch(e) { showToast(e.message, 'danger'); }
 }
 

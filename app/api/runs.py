@@ -45,4 +45,5 @@ def _serialize(r: BackupRun) -> dict:
         "triggered_by": r.triggered_by,
         "checksum_sha256": r.checksum_sha256,
         "integrity_verified": r.integrity_verified,
+        "backup_mode": r.backup_mode or "full",
     }

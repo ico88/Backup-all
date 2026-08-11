@@ -424,6 +424,304 @@ def export_vm_ovf_ovftool(host_cfg, vm_name: str, dest_dir: str, log_fn=None) ->
     return dest_dir
 
 
+def _get_datastore_session(host_cfg, si):
+    """Sessione HTTP autenticata per accesso HTTPS datastore ESXi."""
+    session = requests.Session()
+    session.verify = host_cfg.ssl_verify
+    cookie_raw = si._stub.cookie
+    cookie_val = cookie_raw.split('"')[1] if '"' in cookie_raw else cookie_raw
+    session.cookies.set("vmware_soap_session", cookie_val)
+    return session
+
+
+def _find_snapshot(vm, snapshot_name: str):
+    def _search(tree):
+        for s in tree:
+            if s.name == snapshot_name:
+                return s.snapshot
+            found = _search(s.childSnapshotList)
+            if found:
+                return found
+        return None
+    if not vm.snapshot:
+        return None
+    return _search(vm.snapshot.rootSnapshotList)
+
+
+def enable_cbt(host_cfg, vm_name: str, log_fn=None) -> bool:
+    """
+    Abilita Changed Block Tracking sulla VM.
+    Richiede ESXi con licenza a pagamento.
+    La VM deve essere spenta o in esecuzione (ma serve un ciclo snapshot per attivarlo).
+    """
+    si = _connect(host_cfg)
+    try:
+        vm = _find_vm(si, vm_name)
+        if not vm:
+            raise ValueError(f"VM '{vm_name}' non trovata")
+        if vm.config.changeTrackingEnabled:
+            if log_fn:
+                log_fn("CBT già abilitato sulla VM")
+            return True
+        spec = vim.vm.ConfigSpec()
+        spec.changeTrackingEnabled = True
+        task = vm.ReconfigVM_Task(spec=spec)
+        _wait_task(task, log_fn)
+        if log_fn:
+            log_fn("CBT abilitato — verrà attivato al prossimo snapshot")
+        return True
+    finally:
+        Disconnect(si)
+
+
+def setup_cbt_baseline(host_cfg, vm_name: str, log_fn=None) -> dict:
+    """
+    Dopo un backup completo: abilita CBT, crea snapshot di baseline,
+    legge i changeId iniziali, rimuove lo snapshot.
+    Ritorna {disk_key: {"change_id": ..., "filename": ...}}.
+    """
+    si = _connect(host_cfg)
+    snap_name = f"cbt_baseline_{int(time.time())}"
+    try:
+        vm = _find_vm(si, vm_name)
+        if not vm:
+            raise ValueError(f"VM '{vm_name}' non trovata")
+
+        # Abilita CBT se non attivo
+        if not vm.config.changeTrackingEnabled:
+            spec = vim.vm.ConfigSpec()
+            spec.changeTrackingEnabled = True
+            task = vm.ReconfigVM_Task(spec=spec)
+            _wait_task(task, log_fn)
+
+        # Snapshot di baseline per materializzare il changeId iniziale
+        if log_fn:
+            log_fn("Creazione snapshot baseline CBT...")
+        task = vm.CreateSnapshot_Task(
+            name=snap_name,
+            description="Baseline CBT per backup incrementali",
+            memory=False,
+            quiesce=False,
+        )
+        _wait_task(task, log_fn)
+
+        snap_ref = _find_snapshot(vm, snap_name)
+        if not snap_ref:
+            raise RuntimeError("Snapshot baseline non trovato")
+
+        # Leggi changeId per ogni disco dallo snapshot
+        disk_states = {}
+        for device in snap_ref.config.hardware.device:
+            if not isinstance(device, vim.vm.device.VirtualDisk):
+                continue
+            cid = getattr(device.backing, "changeId", None)
+            filename = getattr(device.backing, "fileName", "")
+            if cid:
+                disk_states[str(device.key)] = {
+                    "change_id": cid,
+                    "filename": filename,
+                }
+
+        if log_fn:
+            log_fn(f"CBT baseline configurato: {len(disk_states)} disco/i tracciati")
+        return disk_states
+    finally:
+        try:
+            vm_ref = _find_vm(si, vm_name)
+            if vm_ref:
+                snap = _find_snapshot(vm_ref, snap_name)
+                if snap:
+                    snap.RemoveSnapshot_Task(removeChildren=False)
+        except Exception:
+            pass
+        Disconnect(si)
+
+
+def backup_vm_cbt_incremental(
+    host_cfg, vm_name: str, dest_dir: str,
+    prev_disk_states: dict, log_fn=None
+) -> dict:
+    """
+    Backup incrementale CBT: scarica solo i blocchi modificati dall'ultimo backup.
+    prev_disk_states: {disk_key_str: {"change_id": ..., "filename": ...}}
+    Crea file .cbt_delta in dest_dir.
+    Ritorna {disk_key_str: {"change_id": ..., "filename": ..., "delta_file": ...}}
+    """
+    import struct
+
+    snap_name = f"cbt_incr_{int(time.time())}"
+    si = _connect(host_cfg)
+
+    try:
+        vm = _find_vm(si, vm_name)
+        if not vm:
+            raise ValueError(f"VM '{vm_name}' non trovata")
+
+        if not vm.config.changeTrackingEnabled:
+            raise RuntimeError(
+                "CBT non abilitato sulla VM. Esegui prima un backup completo "
+                "per inizializzare il tracciamento incrementale."
+            )
+
+        # Raccoglie info dischi prima dello snapshot
+        disks_pre = {}
+        for device in vm.config.hardware.device:
+            if isinstance(device, vim.vm.device.VirtualDisk):
+                fn = getattr(device.backing, "fileName", "")
+                ds_name_raw = fn.split("]")[0].lstrip("[").strip() if "]" in fn else ""
+                rel_path = fn.split("] ")[1].strip() if "] " in fn else fn
+                flat_path = rel_path.replace(".vmdk", "-flat.vmdk")
+                disks_pre[device.key] = {
+                    "ds_name": ds_name_raw,
+                    "flat_path": flat_path,
+                    "size": device.capacityInBytes,
+                    "basename": os.path.basename(rel_path),
+                }
+
+        # Crea snapshot
+        if log_fn:
+            log_fn("Creazione snapshot per backup CBT incrementale...")
+        task = vm.CreateSnapshot_Task(
+            name=snap_name,
+            description="Backup incrementale CBT",
+            memory=False,
+            quiesce=True,
+        )
+        _wait_task(task, log_fn)
+
+        snap_ref = _find_snapshot(vm, snap_name)
+        if not snap_ref:
+            raise RuntimeError("Snapshot CBT non trovato dopo creazione")
+
+        # Leggi nuovi changeId dallo snapshot
+        new_change_ids = {}
+        for device in snap_ref.config.hardware.device:
+            if isinstance(device, vim.vm.device.VirtualDisk):
+                cid = getattr(device.backing, "changeId", None)
+                new_change_ids[device.key] = cid
+
+        port = host_cfg.port or 443
+        base_url = f"https://{host_cfg.host}:{port}"
+        session = _get_datastore_session(host_cfg, si)
+
+        os.makedirs(dest_dir, exist_ok=True)
+        result = {}
+        total_changed_bytes = 0
+
+        for disk_key, disk_info in disks_pre.items():
+            key_str = str(disk_key)
+            prev_state = prev_disk_states.get(key_str, {})
+            prev_cid = prev_state.get("change_id", "*")
+
+            if log_fn:
+                size_gb = round(disk_info["size"] / 1024**3, 1)
+                log_fn(f"Disco {disk_info['basename']} ({size_gb} GB) — query CBT...")
+
+            # Query blocchi modificati
+            try:
+                change_info = vm.QueryChangedDiskAreas(
+                    snapshot=snap_ref,
+                    deviceKey=disk_key,
+                    startOffset=0,
+                    changeId=prev_cid,
+                )
+                extents = change_info.changedArea
+            except Exception as e:
+                if log_fn:
+                    log_fn(f"  CBT query fallita ({e}): scarico tutti i blocchi", level="WARNING")
+                change_info = vm.QueryChangedDiskAreas(
+                    snapshot=snap_ref, deviceKey=disk_key,
+                    startOffset=0, changeId="*",
+                )
+                extents = change_info.changedArea
+
+            total_changed = sum(e.length for e in extents)
+            if log_fn:
+                log_fn(f"  Modificati: {len(extents)} extent — {round(total_changed/1024/1024, 1)} MB")
+
+            delta_filename = disk_info["basename"].replace(".vmdk", ".cbt_delta")
+            delta_path = os.path.join(dest_dir, delta_filename)
+
+            # Formato delta: magic(8) + disk_size(8,LE) + N×[offset(8,LE)+length(4,LE)+data]
+            MAGIC = b"CBTDELTA"
+            with open(delta_path, "wb") as df:
+                df.write(MAGIC)
+                df.write(struct.pack("<Q", disk_info["size"]))
+
+                for extent in extents:
+                    start = extent.start
+                    length = extent.length
+                    enc_flat = urllib.parse.quote(disk_info["flat_path"])
+                    flat_url = (
+                        f"{base_url}/folder/{enc_flat}"
+                        f"?dcPath=ha-datacenter"
+                        f"&dsName={urllib.parse.quote(disk_info['ds_name'])}"
+                    )
+                    headers = {"Range": f"bytes={start}-{start + length - 1}"}
+                    resp = session.get(flat_url, headers=headers, stream=True, timeout=300)
+                    if resp.status_code not in (200, 206):
+                        raise RuntimeError(
+                            f"Download extent fallito per {disk_info['basename']}: "
+                            f"HTTP {resp.status_code}"
+                        )
+                    data = b"".join(resp.iter_content(chunk_size=1024 * 1024))
+                    df.write(struct.pack("<QI", start, len(data)))
+                    df.write(data)
+                    total_changed_bytes += len(data)
+
+            if log_fn:
+                log_fn(f"  Delta salvato: {round(os.path.getsize(delta_path)/1024/1024, 1)} MB → {delta_filename}")
+
+            result[key_str] = {
+                "change_id": new_change_ids.get(disk_key, "*"),
+                "filename": f"[{disk_info['ds_name']}] {disk_info['flat_path'].rsplit('/', 1)[0]}/{disk_info['basename']}",
+                "delta_file": delta_filename,
+            }
+
+        if log_fn:
+            log_fn(f"Backup CBT completato: {round(total_changed_bytes/1024/1024, 1)} MB scaricati")
+
+        return result
+
+    finally:
+        try:
+            vm_ref = _find_vm(si, vm_name)
+            if vm_ref:
+                snap = _find_snapshot(vm_ref, snap_name)
+                if snap:
+                    snap.RemoveSnapshot_Task(removeChildren=False)
+        except Exception:
+            pass
+        Disconnect(si)
+
+
+def apply_cbt_delta(base_vmdk_path: str, delta_path: str, output_path: str):
+    """
+    Applica un delta CBT al VMDK base per ricostruire il disco aggiornato.
+    Usato per restore incrementale.
+    """
+    import struct, shutil
+
+    MAGIC = b"CBTDELTA"
+    shutil.copy2(base_vmdk_path, output_path)
+
+    with open(delta_path, "rb") as df:
+        magic = df.read(8)
+        if magic != MAGIC:
+            raise ValueError("File delta non valido (magic errato)")
+        df.read(8)  # disk_size
+
+        with open(output_path, "r+b") as out:
+            while True:
+                hdr = df.read(12)
+                if not hdr or len(hdr) < 12:
+                    break
+                offset, length = struct.unpack("<QI", hdr)
+                data = df.read(length)
+                out.seek(offset)
+                out.write(data)
+
+
 def list_vms(host_cfg) -> list[dict]:
     """Restituisce lista VM sull'host ESXi."""
     si = _connect(host_cfg)
