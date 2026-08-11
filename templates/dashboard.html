@@ -40,6 +40,17 @@
   </div>
 </div>
 
+<!-- Replica VM summary -->
+<div id="repl-summary" class="mb-4" style="display:none">
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-arrow-repeat me-2" style="color:var(--cri-red)"></i>Replica VM</span>
+      <a href="/replication" class="btn btn-outline-secondary btn-sm">Gestisci</a>
+    </div>
+    <div id="repl-summary-body" class="d-flex flex-wrap gap-0" style="border-top:1px solid var(--card-border)"></div>
+  </div>
+</div>
+
 <div class="row g-4">
   <!-- Job table -->
   <div class="col-lg-7">
@@ -119,8 +130,9 @@ function fmtBytes(b) {
 
 async function loadAll() {
   try {
-    const [servers, jobs, runs] = await Promise.all([
-      api('GET','/api/servers'), api('GET','/api/jobs'), api('GET','/api/runs?limit=10')
+    const [servers, jobs, runs, repls] = await Promise.all([
+      api('GET','/api/servers'), api('GET','/api/jobs'),
+      api('GET','/api/runs?limit=10'), api('GET','/api/replication').catch(()=>[])
     ]);
 
     const now = new Date();
@@ -173,6 +185,38 @@ async function loadAll() {
           </div>
           <i class="bi bi-chevron-right" style="color:var(--text-muted);font-size:.75rem;flex-shrink:0"></i>
         </a>`).join('');
+    }
+
+    // Replica VM summary
+    const replDiv = document.getElementById('repl-summary');
+    if (repls && repls.length) {
+      replDiv.style.display = '';
+      const replBody = document.getElementById('repl-summary-body');
+      replBody.innerHTML = repls.map(r => {
+        const isRunning = r.last_sync_status === 'running';
+        const isFailed  = r.last_sync_status === 'failed';
+        const isFailover = r.failover_state === 'failover';
+        const statusColor = isRunning ? '#3b82f6' : isFailed ? 'var(--danger)' : isFailover ? '#f59e0b' : '#22c55e';
+        const statusIcon  = isRunning ? 'bi-arrow-repeat spin' : isFailed ? 'bi-x-circle' : isFailover ? 'bi-lightning-fill' : 'bi-check-circle';
+        const statusText  = isRunning ? 'Sync in corso' : isFailed ? 'Sync fallito' : isFailover ? 'FAILOVER attivo' : r.last_sync_status === 'never' ? 'Mai sincronizzato' : 'Sync OK';
+        const lastSync = r.last_sync_at ? fmtDate(r.last_sync_at) : '—';
+        return `<div style="flex:1;min-width:220px;padding:.85rem 1.1rem;border-right:1px solid var(--card-border)">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            <i class="bi ${statusIcon}" style="color:${statusColor};font-size:.9rem"></i>
+            <span class="fw-semibold" style="font-size:.84rem">${r.name}</span>
+          </div>
+          <div style="font-size:.75rem;color:var(--text-muted)">${r.source_vm_name} → ${r.target_vm_name}</div>
+          <div class="d-flex align-items-center justify-content-between mt-1">
+            <span style="font-size:.75rem;color:${statusColor}">${statusText}</span>
+            <span style="font-size:.72rem;color:var(--text-muted)">${lastSync}</span>
+          </div>
+          ${isRunning ? `<div style="background:#1a1d24;border-radius:3px;height:3px;margin-top:.4rem;overflow:hidden">
+            <div style="height:100%;width:60%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:3px;animation:indeterminate 1.4s infinite linear"></div>
+          </div>` : ''}
+        </div>`;
+      }).join('');
+    } else {
+      replDiv.style.display = 'none';
     }
 
     document.getElementById('last-update').textContent = 'Aggiornato: '+new Date().toLocaleTimeString('it-IT');

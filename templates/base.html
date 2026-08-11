@@ -142,6 +142,7 @@
     ::-webkit-scrollbar-thumb { background: #2a2d38; border-radius: 3px; }
     .spin { animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes indeterminate { 0%{transform:translateX(-100%)} 100%{transform:translateX(500%)} }
     .alert-dark-info { background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.25); color: #93c5fd; border-radius: 7px; padding: .7rem 1rem; font-size: .83rem; }
     .modal-content { background: #1a1d24; border: 1px solid var(--card-border); color: var(--text-primary); }
     .modal-header { border-color: var(--card-border); }
