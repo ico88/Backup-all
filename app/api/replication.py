@@ -155,9 +155,9 @@ def promote(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{job_id}/runs")
-def get_runs(job_id: int, db: Session = Depends(get_db)):
+def get_runs(job_id: int, limit: int = 20, db: Session = Depends(get_db)):
     runs = db.query(VMReplicationRun).filter_by(job_id=job_id).order_by(
-        VMReplicationRun.started_at.desc()).limit(20).all()
+        VMReplicationRun.started_at.desc()).limit(limit).all()
     return [_serialize_run(r) for r in runs]
 
 

@@ -173,6 +173,39 @@ let replJobs = [];
 let promoteJobId = null;
 let replLogRefreshTimer = null;
 let currentLogJobId = null;
+let _progressTimers = {};
+
+function _startProgressPolling(jobId) {
+  if (_progressTimers[jobId]) return;
+  _progressTimers[jobId] = setInterval(async () => {
+    try {
+      const runs = await api('GET', `/api/replication/${jobId}/runs?limit=1`);
+      const run = runs && runs[0];
+      if (!run || run.status !== 'running') {
+        clearInterval(_progressTimers[jobId]);
+        delete _progressTimers[jobId];
+        return;
+      }
+      const log = run.log_output || '';
+      // Cerca l'ultima riga "Disk progress: X%"
+      const matches = [...log.matchAll(/Disk progress:\s*(\d+)%/gi)];
+      if (matches.length) {
+        const pct = parseInt(matches[matches.length - 1][1]);
+        const fill = document.getElementById(`progress-fill-${jobId}`);
+        const label = document.getElementById(`progress-pct-${jobId}`);
+        if (fill) fill.style.width = pct + '%';
+        if (label) label.textContent = pct + '%';
+      }
+    } catch(e) {}
+  }, 4000);
+}
+
+function _stopProgressPolling(jobId) {
+  if (_progressTimers[jobId]) {
+    clearInterval(_progressTimers[jobId]);
+    delete _progressTimers[jobId];
+  }
+}
 
 // ── Init ──────────────────────────────────────────────
 async function init() {
@@ -241,6 +274,10 @@ async function loadJobs() {
     const container = document.getElementById('repl-list');
     document.getElementById('no-repl-msg').style.display = replJobs.length ? 'none' : '';
     container.innerHTML = replJobs.map(renderCard).join('');
+    replJobs.forEach(j => {
+      if (j.last_sync_status === 'running') _startProgressPolling(j.id);
+      else _stopProgressPolling(j.id);
+    });
   } catch(e) {}
 }
 
@@ -330,10 +367,20 @@ function renderCard(j) {
           <span class="text-muted">Ultimo sync:</span>
           <span>${lastSync}</span>
         </div>
-        <div class="d-flex align-items-center justify-content-between" style="font-size:.82rem">
+        <div class="d-flex align-items-center justify-content-between mb-2" style="font-size:.82rem">
           <span class="text-muted">Stato:</span>
           ${syncStatusBadge(j.last_sync_status)}
         </div>
+        ${j.last_sync_status === 'running' ? `
+        <div id="progress-bar-${j.id}" style="margin-top:.5rem">
+          <div class="d-flex justify-content-between mb-1" style="font-size:.75rem;color:var(--text-muted)">
+            <span><i class="bi bi-arrow-repeat spin me-1"></i>Trasferimento disco in corso…</span>
+            <span id="progress-pct-${j.id}">—</span>
+          </div>
+          <div style="background:#1a1d24;border-radius:4px;height:6px;overflow:hidden">
+            <div id="progress-fill-${j.id}" style="height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#60a5fa);border-radius:4px;transition:width .4s ease"></div>
+          </div>
+        </div>` : ''}
         ${heartbeatInfo}
       </div>
       <div class="card-footer d-flex gap-2">
