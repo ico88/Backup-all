@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+{% block title %}Destinazioni Backup{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-9">
+
+    <!-- Lista destinazioni esistenti -->
+    <div class="card shadow-sm mb-4">
+      <div class="card-header d-flex align-items-center justify-content-between">
+        <h5 class="mb-0"><i class="bi bi-hdd-network me-2 text-danger"></i>Destinazioni configurate</h5>
+        <button class="btn btn-sm btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#add-form">
+          <i class="bi bi-plus-lg"></i> Aggiungi
+        </button>
+      </div>
+      <div class="card-body p-0">
+        <div id="dest-list-container">
+          <p class="text-muted text-center py-4" id="no-dests-msg">Nessuna destinazione configurata.</p>
+          <table class="table table-hover table-dark mb-0" id="dest-table" style="display:none">
+            <thead><tr>
+              <th>Nome</th><th>Tipo</th><th>Host</th><th>Path</th><th>Retention</th><th></th>
+            </tr></thead>
+            <tbody id="dest-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Form aggiunta (collassabile) -->
+    <div class="collapse" id="add-form">
+      <div class="card shadow-sm mb-4">
+        <div class="card-header">
+          <h6 class="mb-0">Nuova destinazione</h6>
+        </div>
+        <div class="card-body">
+          <form id="dest-form">
+            <div class="mb-3">
+              <label class="form-label">Nome</label>
+              <input class="form-control" id="f-name" placeholder="QNAP principale" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Indirizzo IP del QNAP</label>
+              <input class="form-control" id="f-host" placeholder="192.168.1.x" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Metodo di connessione</label>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <div class="card type-card border-2 cursor-pointer" data-type="rsync" onclick="selectDest('rsync',this)">
+                    <div class="card-body text-center py-3">
+                      <i class="bi bi-arrow-left-right fs-2 text-success mb-1"></i>
+                      <div class="fw-semibold">rsync over SSH</div>
+                      <small class="text-muted">Consigliato — efficiente e sicuro</small>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <div class="card type-card border-2 cursor-pointer" data-type="qnap_api" onclick="selectDest('qnap_api',this)">
+                    <div class="card-body text-center py-3">
+                      <i class="bi bi-cloud-upload fs-2 text-primary mb-1"></i>
+                      <div class="fw-semibold">API QTS</div>
+                      <small class="text-muted">Interfaccia nativa QNAP</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="rsync-fields">
+              <div class="alert alert-info py-2 px-3 mb-3" style="font-size:.8rem;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25);color:#93c5fd">
+                <i class="bi bi-info-circle me-2"></i><strong>Cosa abilitare sul QNAP:</strong>
+                Pannello di controllo → <strong>Servizi file → SSH</strong> → abilita SSH (porta 22).
+                L'utente deve avere accesso SSH: <strong>Utenti → modifica utente → Applicazioni → SSH</strong> → spunta.
+                Il percorso base (es. <code>/share/Backup</code>) deve esistere e l'utente deve avere permessi di scrittura sulla share.
+              </div>
+              <div class="row g-3">
+                <div class="col-md-3">
+                  <label class="form-label">Porta SSH</label>
+                  <input class="form-control" id="f-port-rsync" value="22" type="number">
+                </div>
+                <div class="col-md-9">
+                  <label class="form-label">Utente QNAP</label>
+                  <input class="form-control" id="f-user-rsync" placeholder="admin">
+                </div>
+              </div>
+              <div class="mt-3">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-control" id="f-pass-rsync">
+              </div>
+            </div>
+
+            <div id="api-fields" style="display:none">
+              <div class="alert alert-info py-2 px-3 mb-3" style="font-size:.8rem;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25);color:#93c5fd">
+                <i class="bi bi-info-circle me-2"></i><strong>Cosa abilitare sul QNAP:</strong>
+                Pannello di controllo → <strong>Applicazioni → File Station</strong> → abilita.
+                L'API QTS usa la porta HTTP del QNAP (default 8080). Assicurati che l'utente abbia accesso a File Station.
+              </div>
+              <div class="row g-3">
+                <div class="col-md-3">
+                  <label class="form-label">Porta QTS</label>
+                  <input class="form-control" id="f-port-api" value="8080" type="number">
+                </div>
+                <div class="col-md-9">
+                  <label class="form-label">Utente QNAP</label>
+                  <input class="form-control" id="f-user-api" placeholder="admin">
+                </div>
+              </div>
+              <div class="mt-3">
+                <label class="form-label">Password</label>
+                <input type="password" class="form-control" id="f-pass-api">
+              </div>
+            </div>
+
+            <div class="mt-3">
+              <label class="form-label">Percorso base sul QNAP</label>
+              <input class="form-control" id="f-base-path" placeholder="/share/Backup" required>
+              <div class="form-text">Tutti i backup rsync/API verranno salvati in questa cartella.</div>
+            </div>
+
+            <div class="mt-3">
+              <label class="form-label">Share SMB <span class="text-muted fw-normal">(per backup bare-metal Windows)</span></label>
+              <input class="form-control" id="f-smb-share" placeholder="Backup">
+              <div class="form-text">
+                Nome della share SMB sul QNAP (es. <code>Backup</code> → il server Windows si collegherà a <code>\\192.168.x.x\Backup</code>).
+                <strong>Cosa abilitare sul QNAP:</strong> Pannello di controllo → <strong>Servizi file → Win/Mac/NFS → Microsoft Networking</strong> → abilita.
+                La share deve avere i permessi di lettura/scrittura per l'utente specificato.
+              </div>
+            </div>
+
+            <div class="mt-3">
+              <label class="form-label">Retention (giorni)</label>
+              <input class="form-control" id="f-retention" value="30" type="number" min="1">
+            </div>
+
+            <div id="test-result-new" class="mt-3" style="display:none"></div>
+            <div class="d-flex gap-3 mt-3 pt-3 border-top">
+              <button type="button" class="btn btn-outline-secondary" onclick="testConnNew()">
+                <i class="bi bi-wifi"></i> Testa connessione
+              </button>
+              <button type="submit" class="btn btn-danger ms-auto">
+                <i class="bi bi-check-lg"></i> Salva destinazione
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-end">
+      <a href="/wizard/job" class="btn btn-outline-light">
+        Avanti: Configura job <i class="bi bi-arrow-right ms-1"></i>
+      </a>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modal modifica -->
+<div class="modal fade" id="editDestModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content bg-dark text-light">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title"><i class="bi bi-pencil-square me-2"></i>Modifica destinazione</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Nome</label>
+            <input class="form-control" id="e-name">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Host / IP</label>
+            <input class="form-control" id="e-host">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Tipo</label>
+            <select class="form-select" id="e-type">
+              <option value="rsync">rsync over SSH</option>
+              <option value="qnap_api">API QTS</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Porta</label>
+            <input class="form-control" id="e-port" type="number">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Utente</label>
+            <input class="form-control" id="e-username">
+          </div>
+          <div class="col-md-12">
+            <label class="form-label">Password <span class="text-muted fw-normal">(lascia vuoto per non modificare)</span></label>
+            <input type="password" class="form-control" id="e-password" placeholder="••••••••">
+          </div>
+          <div class="col-md-8">
+            <label class="form-label">Percorso base</label>
+            <input class="form-control" id="e-base-path">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Retention (giorni)</label>
+            <input class="form-control" id="e-retention" type="number" min="1">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Share SMB <span class="text-muted fw-normal">(per wbadmin)</span></label>
+            <input class="form-control" id="e-smb-share" placeholder="Backup">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Modulo rsync</label>
+            <input class="form-control" id="e-rsync-module" placeholder="facoltativo">
+          </div>
+        </div>
+        <div id="test-result-dest" class="mt-3" style="display:none"></div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button class="btn btn-outline-info" onclick="testDestConn()">
+          <i class="bi bi-wifi"></i> Testa connessione
+        </button>
+        <button class="btn btn-danger" onclick="saveEditDest()">
+          <i class="bi bi-check-lg"></i> Salva modifiche
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedDest = 'rsync';
+let editingDestId = null;
+let destList = [];
+
+selectDest('rsync', document.querySelector('[data-type="rsync"]'));
+
+function selectDest(type, el) {
+  document.querySelectorAll('.type-card').forEach(c=>c.classList.remove('border-danger','bg-dark'));
+  el.classList.add('border-danger');
+  selectedDest = type;
+  document.getElementById('rsync-fields').style.display = type==='rsync'?'':'none';
+  document.getElementById('api-fields').style.display   = type==='qnap_api'?'':'none';
+}
+
+function typeBadge(t) {
+  if (t === 'rsync') return '<span class="badge" style="background:#166534;color:#bbf7d0">rsync SSH</span>';
+  return '<span class="badge" style="background:#1e3a5f;color:#bae6fd">API QTS</span>';
+}
+
+async function loadDests() {
+  try {
+    destList = await api('GET', '/api/destinations');
+    const tbody = document.getElementById('dest-tbody');
+    tbody.innerHTML = '';
+    if (destList.length === 0) {
+      document.getElementById('no-dests-msg').style.display = '';
+      document.getElementById('dest-table').style.display = 'none';
+      return;
+    }
+    document.getElementById('no-dests-msg').style.display = 'none';
+    document.getElementById('dest-table').style.display = '';
+    destList.forEach(d => {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.onclick = () => openEditDest(d.id);
+      tr.innerHTML = `
+        <td class="fw-semibold">${d.name}</td>
+        <td>${typeBadge(d.dest_type)}</td>
+        <td><code style="color:#fbbf24">${d.host}</code></td>
+        <td><small class="text-muted">${d.base_path}</small></td>
+        <td><small>${d.max_retention_days}gg</small></td>
+        <td><button class="btn btn-sm btn-outline-danger py-0" onclick="event.stopPropagation();deleteDest(${d.id})"><i class="bi bi-trash"></i></button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch(e) { showToast('Errore caricamento destinazioni: '+e.message, 'danger'); }
+}
+
+function openEditDest(id) {
+  const d = destList.find(x => x.id === id);
+  if (!d) return;
+  editingDestId = id;
+  document.getElementById('e-name').value = d.name || '';
+  document.getElementById('e-host').value = d.host || '';
+  document.getElementById('e-type').value = d.dest_type || 'rsync';
+  document.getElementById('e-port').value = d.port || '';
+  document.getElementById('e-username').value = d.username || '';
+  document.getElementById('e-password').value = '';
+  document.getElementById('e-base-path').value = d.base_path || '';
+  document.getElementById('e-retention').value = d.max_retention_days || 30;
+  document.getElementById('e-smb-share').value = d.smb_share || '';
+  document.getElementById('e-rsync-module').value = d.rsync_module || '';
+  document.getElementById('test-result-dest').style.display = 'none';
+  new bootstrap.Modal(document.getElementById('editDestModal')).show();
+}
+
+async function saveEditDest() {
+  const payload = {
+    name: document.getElementById('e-name').value,
+    host: document.getElementById('e-host').value,
+    dest_type: document.getElementById('e-type').value,
+    port: +document.getElementById('e-port').value || null,
+    username: document.getElementById('e-username').value,
+    password: document.getElementById('e-password').value || null,
+    base_path: document.getElementById('e-base-path').value,
+    rsync_module: document.getElementById('e-rsync-module').value || null,
+    smb_share: document.getElementById('e-smb-share').value || null,
+    max_retention_days: +document.getElementById('e-retention').value,
+  };
+  try {
+    await api('PUT', `/api/destinations/${editingDestId}`, payload);
+    bootstrap.Modal.getInstance(document.getElementById('editDestModal')).hide();
+    showToast('Destinazione aggiornata!', 'success');
+    loadDests();
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
+async function testDestConn() {
+  const btn = event.target;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  const resDiv = document.getElementById('test-result-dest');
+  resDiv.style.display = 'none';
+  try {
+    const r = await api('POST', `/api/destinations/${editingDestId}/test`);
+    resDiv.className = 'alert alert-success mt-3';
+    resDiv.textContent = r.message;
+    resDiv.style.display = '';
+  } catch(e) {
+    resDiv.className = 'alert alert-danger mt-3';
+    resDiv.textContent = e.message;
+    resDiv.style.display = '';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-wifi"></i> Testa connessione';
+}
+
+async function deleteDest(id) {
+  if (!confirm('Eliminare questa destinazione?')) return;
+  try {
+    await api('DELETE', `/api/destinations/${id}`);
+    showToast('Destinazione eliminata', 'success');
+    loadDests();
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
+async function testConnNew() {
+  const btn = event.target.closest('button');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Test…';
+  const host = document.getElementById('f-host').value;
+  if (!host) { showToast('Inserisci prima l\'indirizzo IP', 'warning'); btn.disabled=false; btn.innerHTML='<i class="bi bi-wifi"></i> Testa connessione'; return; }
+  const payload = {
+    host,
+    dest_type: selectedDest,
+    port: selectedDest === 'rsync' ? +document.getElementById('f-port-rsync').value : +document.getElementById('f-port-api').value,
+    username: selectedDest === 'rsync' ? document.getElementById('f-user-rsync').value : document.getElementById('f-user-api').value,
+    password: selectedDest === 'rsync' ? document.getElementById('f-pass-rsync').value : document.getElementById('f-pass-api').value,
+  };
+  const resDiv = document.getElementById('test-result-new');
+  resDiv.style.display = 'none';
+  try {
+    const r = await api('POST', '/api/destinations/test-inline', payload);
+    resDiv.className = 'alert alert-success py-2'; resDiv.textContent = r.message; resDiv.style.display = '';
+  } catch(e) {
+    resDiv.className = 'alert alert-danger py-2'; resDiv.textContent = e.message; resDiv.style.display = '';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="bi bi-wifi"></i> Testa connessione';
+}
+
+function buildNewPayload() {
+  const name = document.getElementById('f-name').value;
+  const host = document.getElementById('f-host').value;
+  const basePath = document.getElementById('f-base-path').value;
+  if (!name || !host || !basePath) { showToast('Compila i campi obbligatori','warning'); return null; }
+  const p = {
+    name, description: null, dest_type: selectedDest,
+    host, base_path: basePath,
+    smb_share: document.getElementById('f-smb-share').value || null,
+    max_retention_days: +document.getElementById('f-retention').value,
+  };
+  if (selectedDest === 'rsync') {
+    p.port = +document.getElementById('f-port-rsync').value;
+    p.username = document.getElementById('f-user-rsync').value;
+    p.password = document.getElementById('f-pass-rsync').value;
+  } else {
+    p.port = +document.getElementById('f-port-api').value;
+    p.username = document.getElementById('f-user-api').value;
+    p.password = document.getElementById('f-pass-api').value;
+  }
+  return p;
+}
+
+document.getElementById('dest-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const payload = buildNewPayload();
+  if (!payload) return;
+  try {
+    const res = await api('POST', '/api/destinations', payload);
+    showToast(`Destinazione "${res.name}" salvata!`, 'success');
+    document.getElementById('dest-form').reset();
+    bootstrap.Collapse.getInstance(document.getElementById('add-form'))?.hide();
+    loadDests();
+  } catch(e) { showToast(e.message, 'danger'); }
+});
+
+loadDests();
+</script>
+{% endblock %}

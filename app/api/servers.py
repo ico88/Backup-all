@@ -1,0 +1,447 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import Optional
+import json
+
+from app.database import get_db
+from app.models import Server, VMwareHost, ServerType
+from app.crypto import encrypt, decrypt
+
+router = APIRouter(prefix="/api/servers", tags=["servers"])
+
+
+class VMwareHostCreate(BaseModel):
+    name: str
+    host: str
+    port: int = 443
+    username: str
+    password: str
+    ssl_verify: bool = False
+
+
+class XCPHostCreate(BaseModel):
+    name: str
+    host: str
+    port: int = 443
+    username: str
+    password: str
+    ssl_verify: bool = False
+
+
+class ServerCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    server_type: ServerType
+    ip_address: str
+    vm_name: Optional[str] = None
+    vmware_host_id: Optional[int] = None
+    xcp_host_id: Optional[int] = None
+    ssh_port: int = 22
+    winrm_port: int = 5985
+    username: Optional[str] = None
+    password: Optional[str] = None
+    ssh_key_path: Optional[str] = None
+    app_name: Optional[str] = None
+    app_data_paths: Optional[list[str]] = None
+    app_db_type: Optional[str] = None
+    app_db_name: Optional[str] = None
+    app_db_user: Optional[str] = None
+    app_db_password: Optional[str] = None
+
+
+# ── VMware Hosts ──────────────────────────────────────
+
+@router.get("/vmware-hosts")
+def list_vmware_hosts(db: Session = Depends(get_db)):
+    hosts = db.query(VMwareHost).all()
+    return [{"id": h.id, "name": h.name, "host": h.host, "port": h.port,
+             "username": h.username} for h in hosts]
+
+
+@router.post("/vmware-hosts", status_code=201)
+def create_vmware_host(data: VMwareHostCreate, db: Session = Depends(get_db)):
+    host = VMwareHost(
+        name=data.name, host=data.host, port=data.port,
+        username=data.username, password_enc=encrypt(data.password),
+        ssl_verify=data.ssl_verify,
+    )
+    db.add(host)
+    db.commit()
+    db.refresh(host)
+    return {"id": host.id, "name": host.name}
+
+
+@router.delete("/vmware-hosts/{host_id}", status_code=204)
+def delete_vmware_host(host_id: int, db: Session = Depends(get_db)):
+    host = db.get(VMwareHost, host_id)
+    if not host:
+        raise HTTPException(404, "Host VMware non trovato")
+    in_use = db.query(Server).filter(Server.vmware_host_id == host_id).count()
+    if in_use:
+        raise HTTPException(409, f"Host usato da {in_use} sorgente/i — rimuovile prima")
+    db.delete(host)
+    db.commit()
+
+
+@router.get("/vmware-hosts/{host_id}/vms")
+def list_vms_on_host(host_id: int, db: Session = Depends(get_db)):
+    host = db.get(VMwareHost, host_id)
+    if not host:
+        raise HTTPException(404, "Host VMware non trovato")
+    from app.backup.vmware import list_vms
+    try:
+        return list_vms(host)
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# ── XCP-ng Hosts ──────────────────────────────────────
+
+@router.get("/xcp-hosts")
+def list_xcp_hosts(db: Session = Depends(get_db)):
+    from app.models import XCPHost
+    hosts = db.query(XCPHost).all()
+    return [{"id": h.id, "name": h.name, "host": h.host, "port": h.port,
+             "username": h.username} for h in hosts]
+
+
+@router.post("/xcp-hosts", status_code=201)
+def create_xcp_host(data: XCPHostCreate, db: Session = Depends(get_db)):
+    from app.models import XCPHost
+    host = XCPHost(
+        name=data.name, host=data.host, port=data.port,
+        username=data.username, password_enc=encrypt(data.password),
+        ssl_verify=data.ssl_verify,
+    )
+    db.add(host)
+    db.commit()
+    db.refresh(host)
+    return {"id": host.id, "name": host.name}
+
+
+@router.delete("/xcp-hosts/{host_id}", status_code=204)
+def delete_xcp_host(host_id: int, db: Session = Depends(get_db)):
+    from app.models import XCPHost
+    host = db.get(XCPHost, host_id)
+    if not host:
+        raise HTTPException(404, "Host XCP-ng non trovato")
+    in_use = db.query(Server).filter(Server.xcp_host_id == host_id).count()
+    if in_use:
+        raise HTTPException(409, f"Host usato da {in_use} sorgente/i — rimuovile prima")
+    db.delete(host)
+    db.commit()
+
+
+@router.get("/xcp-hosts/{host_id}/vms")
+def list_vms_xcp(host_id: int, db: Session = Depends(get_db)):
+    from app.models import XCPHost
+    from app.backup.xcpng import list_vms
+    host = db.get(XCPHost, host_id)
+    if not host:
+        raise HTTPException(404, "Host XCP-ng non trovato")
+    try:
+        return list_vms(host)
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+# ── Servers ───────────────────────────────────────────
+
+@router.get("")
+def list_servers(db: Session = Depends(get_db)):
+    servers = db.query(Server).all()
+    return [_serialize(s) for s in servers]
+
+
+@router.get("/{server_id}")
+def get_server(server_id: int, db: Session = Depends(get_db)):
+    s = db.get(Server, server_id)
+    if not s:
+        raise HTTPException(404, "Server non trovato")
+    return _serialize(s)
+
+
+@router.post("", status_code=201)
+def create_server(data: ServerCreate, db: Session = Depends(get_db)):
+    s = Server(
+        name=data.name,
+        description=data.description,
+        server_type=data.server_type,
+        ip_address=data.ip_address,
+        vm_name=data.vm_name,
+        vmware_host_id=data.vmware_host_id,
+        xcp_host_id=data.xcp_host_id,
+        ssh_port=data.ssh_port,
+        winrm_port=data.winrm_port,
+        username=data.username,
+        password_enc=encrypt(data.password) if data.password else None,
+        ssh_key_path=data.ssh_key_path,
+        app_name=data.app_name,
+        app_data_paths=json.dumps(data.app_data_paths or []),
+        app_db_type=data.app_db_type,
+        app_db_name=data.app_db_name,
+        app_db_user=data.app_db_user,
+        app_db_password_enc=encrypt(data.app_db_password) if data.app_db_password else None,
+    )
+    db.add(s)
+    db.commit()
+    db.refresh(s)
+    return {"id": s.id, "name": s.name}
+
+
+@router.put("/{server_id}")
+def update_server(server_id: int, data: ServerCreate, db: Session = Depends(get_db)):
+    s = db.get(Server, server_id)
+    if not s:
+        raise HTTPException(404, "Server non trovato")
+    s.name = data.name
+    s.description = data.description
+    s.server_type = data.server_type
+    s.ip_address = data.ip_address
+    s.vm_name = data.vm_name
+    s.vmware_host_id = data.vmware_host_id
+    s.xcp_host_id = data.xcp_host_id
+    s.ssh_port = data.ssh_port
+    s.winrm_port = data.winrm_port
+    s.username = data.username
+    if data.password:
+        s.password_enc = encrypt(data.password)
+    s.ssh_key_path = data.ssh_key_path
+    s.app_name = data.app_name
+    s.app_data_paths = json.dumps(data.app_data_paths or [])
+    s.app_db_type = data.app_db_type
+    s.app_db_name = data.app_db_name
+    s.app_db_user = data.app_db_user
+    if data.app_db_password:
+        s.app_db_password_enc = encrypt(data.app_db_password)
+    db.commit()
+    return {"ok": True}
+
+
+class ServerTestInline(BaseModel):
+    server_type: ServerType
+    ip_address: str
+    ssh_port: int = 22
+    winrm_port: int = 5985
+    username: Optional[str] = None
+    password: Optional[str] = None
+    vmware_host_id: Optional[int] = None
+    xcp_host_id: Optional[int] = None
+    vm_name: Optional[str] = None
+
+
+@router.post("/test-inline")
+def test_server_inline(data: ServerTestInline, db: Session = Depends(get_db)):
+    import subprocess, os, shutil, socket
+    if data.server_type == ServerType.VMWARE:
+        if not data.vmware_host_id:
+            raise HTTPException(400, "Seleziona un host ESXi prima di testare")
+        host = db.get(VMwareHost, data.vmware_host_id)
+        if not host:
+            raise HTTPException(404, "Host VMware non trovato")
+        try:
+            from app.backup.vmware import list_vms
+            vms = list_vms(host)
+            vm_names = [v["name"] for v in vms]
+            if data.vm_name and data.vm_name not in vm_names:
+                raise HTTPException(500, f"VM '{data.vm_name}' non trovata su {host.host}. Disponibili: {', '.join(vm_names[:5])}")
+            return {"ok": True, "message": f"Connessione a ESXi {host.host} riuscita — {len(vms)} VM trovate ✓"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Errore connessione ESXi {host.host}: {e}")
+
+    if data.server_type == ServerType.XCPNG:
+        if not data.xcp_host_id:
+            raise HTTPException(400, "Seleziona un host XCP-ng prima di testare")
+        from app.models import XCPHost
+        host = db.get(XCPHost, data.xcp_host_id)
+        if not host:
+            raise HTTPException(404, "Host XCP-ng non trovato")
+        try:
+            from app.backup.xcpng import list_vms
+            vms = list_vms(host)
+            vm_names = [v["name"] for v in vms]
+            if data.vm_name and data.vm_name not in vm_names:
+                raise HTTPException(500, f"VM '{data.vm_name}' non trovata su {host.host}. Disponibili: {', '.join(vm_names[:5])}")
+            return {"ok": True, "message": f"Connessione a XCP-ng {host.host} riuscita — {len(vms)} VM trovate ✓"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Errore connessione XCP-ng {host.host}: {e}")
+
+    if data.server_type == ServerType.WINDOWS:
+        port = data.winrm_port or 5985
+        try:
+            with socket.create_connection((data.ip_address, port), timeout=8):
+                pass
+            return {"ok": True, "message": f"Porta WinRM {data.ip_address}:{port} raggiungibile ✓"}
+        except socket.timeout:
+            raise HTTPException(500, f"Timeout: {data.ip_address}:{port} non risponde")
+        except ConnectionRefusedError:
+            raise HTTPException(500, f"Connessione rifiutata su {data.ip_address}:{port} — WinRM abilitato?")
+        except OSError as e:
+            raise HTTPException(500, f"Host {data.ip_address} non raggiungibile: {e}")
+
+    # Linux SSH
+    port = data.ssh_port or 22
+    password = data.password or ""
+    has_sshpass = shutil.which("sshpass") is not None
+    if password and not has_sshpass:
+        raise HTTPException(500, "sshpass non installato sul server — esegui: sudo apt install sshpass")
+    env = os.environ.copy()
+    if password and has_sshpass:
+        env["SSHPASS"] = password
+        cmd = ["sshpass", "-e", "ssh"]
+    else:
+        cmd = ["ssh"]
+    cmd += ["-p", str(port), "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=no",
+            f"{data.username}@{data.ip_address}", "echo OK"]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=15)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(500, f"Timeout: {data.ip_address}:{port} non risponde entro 15 secondi")
+    except FileNotFoundError as e:
+        raise HTTPException(500, f"Comando non trovato: {e}")
+    if result.returncode == 0 and "OK" in result.stdout:
+        return {"ok": True, "message": f"Connessione SSH a {data.ip_address}:{port} riuscita ✓"}
+    stderr = result.stderr.strip()
+    if "Permission denied" in stderr or "Authentication failed" in stderr:
+        raise HTTPException(500, f"Credenziali errate per {data.username}@{data.ip_address}")
+    elif "Connection refused" in stderr:
+        raise HTTPException(500, f"Connessione rifiutata su {data.ip_address}:{port}")
+    elif "No route to host" in stderr or "Network unreachable" in stderr:
+        raise HTTPException(500, f"Host {data.ip_address} non raggiungibile")
+    elif "Connection timed out" in stderr:
+        raise HTTPException(500, f"Timeout connessione a {data.ip_address}:{port}")
+    raise HTTPException(500, f"SSH error (rc={result.returncode}): {stderr[:300] or 'nessun output'}")
+
+
+@router.post("/{server_id}/test")
+def test_server(server_id: int, db: Session = Depends(get_db)):
+    import subprocess, os, shutil, socket, logging
+    log = logging.getLogger("backup-all.test")
+
+    s = db.get(Server, server_id)
+    if not s:
+        raise HTTPException(404, "Server non trovato")
+
+    from app.models import ServerType
+    if s.server_type == ServerType.VMWARE:
+        if not s.vmware_host_id:
+            raise HTTPException(400, "Nessun host VMware associato a questa sorgente")
+        from app.models import VMwareHost as VH
+        host = db.get(VH, s.vmware_host_id)
+        if not host:
+            raise HTTPException(404, "Host VMware non trovato nel DB")
+        try:
+            from app.backup.vmware import list_vms
+            vms = list_vms(host)
+            vm_names = [v["name"] for v in vms]
+            if s.vm_name and s.vm_name not in vm_names:
+                raise HTTPException(500, f"VM '{s.vm_name}' non trovata su {host.host}. VM disponibili: {', '.join(vm_names[:5])}")
+            return {"ok": True, "message": f"Connessione a ESXi {host.host} riuscita — {len(vms)} VM trovate ✓"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Errore connessione ESXi {host.host}: {e}")
+
+    if s.server_type == ServerType.XCPNG:
+        if not s.xcp_host_id:
+            raise HTTPException(400, "Nessun host XCP-ng associato a questa sorgente")
+        from app.models import XCPHost
+        host = db.get(XCPHost, s.xcp_host_id)
+        if not host:
+            raise HTTPException(404, "Host XCP-ng non trovato nel DB")
+        try:
+            from app.backup.xcpng import list_vms
+            vms = list_vms(host)
+            vm_names = [v["name"] for v in vms]
+            if s.vm_name and s.vm_name not in vm_names:
+                raise HTTPException(500, f"VM '{s.vm_name}' non trovata su {host.host}. VM disponibili: {', '.join(vm_names[:5])}")
+            return {"ok": True, "message": f"Connessione a XCP-ng {host.host} riuscita — {len(vms)} VM trovate ✓"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Errore connessione XCP-ng {host.host}: {e}")
+
+    if s.server_type == ServerType.WINDOWS:
+        port = s.winrm_port or 5985
+        try:
+            with socket.create_connection((s.ip_address, port), timeout=8):
+                pass
+            return {"ok": True, "message": f"Porta WinRM {s.ip_address}:{port} raggiungibile ✓"}
+        except socket.timeout:
+            raise HTTPException(500, f"Timeout: {s.ip_address}:{port} non risponde")
+        except ConnectionRefusedError:
+            raise HTTPException(500, f"Connessione rifiutata su {s.ip_address}:{port} — WinRM abilitato?")
+        except OSError as e:
+            raise HTTPException(500, f"Host {s.ip_address} non raggiungibile: {e}")
+
+    # Linux — test SSH
+    password = decrypt(s.password_enc) if s.password_enc else ""
+    port = s.ssh_port or 22
+    has_sshpass = shutil.which("sshpass") is not None
+    if password and not has_sshpass:
+        raise HTTPException(500, "sshpass non installato. Esegui: sudo apt install sshpass")
+
+    env = os.environ.copy()
+    if password and has_sshpass:
+        env["SSHPASS"] = password
+        cmd = ["sshpass", "-e", "ssh"]
+    else:
+        cmd = ["ssh"]
+
+    cmd += ["-p", str(port), "-o", "ConnectTimeout=8",
+            "-o", "StrictHostKeyChecking=no",
+            f"{s.username}@{s.ip_address}", "echo OK"]
+
+    log.info("Test server SSH: %s@%s:%s", s.username, s.ip_address, port)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=15)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(500, f"Timeout: {s.ip_address}:{port} non risponde entro 15 secondi")
+    except FileNotFoundError as e:
+        raise HTTPException(500, f"Comando non trovato: {e}")
+
+    if result.returncode == 0 and "OK" in result.stdout:
+        return {"ok": True, "message": f"Connessione SSH a {s.ip_address}:{port} riuscita ✓"}
+
+    stderr = result.stderr.strip()
+    if "Permission denied" in stderr or "Authentication failed" in stderr:
+        raise HTTPException(500, f"Credenziali errate per {s.username}@{s.ip_address}")
+    elif "Connection refused" in stderr:
+        raise HTTPException(500, f"Connessione rifiutata su {s.ip_address}:{port}")
+    elif "No route to host" in stderr or "Network unreachable" in stderr:
+        raise HTTPException(500, f"Host {s.ip_address} non raggiungibile")
+    elif "Connection timed out" in stderr:
+        raise HTTPException(500, f"Timeout connessione a {s.ip_address}:{port}")
+    raise HTTPException(500, f"SSH error (rc={result.returncode}): {stderr[:300] or 'nessun output'}")
+
+
+@router.delete("/{server_id}")
+def delete_server(server_id: int, db: Session = Depends(get_db)):
+    s = db.get(Server, server_id)
+    if not s:
+        raise HTTPException(404, "Server non trovato")
+    db.delete(s)
+    db.commit()
+    return {"ok": True}
+
+
+def _serialize(s: Server) -> dict:
+    return {
+        "id": s.id, "name": s.name, "description": s.description,
+        "server_type": s.server_type, "ip_address": s.ip_address,
+        "ssh_port": s.ssh_port, "winrm_port": s.winrm_port,
+        "username": s.username,
+        "vm_name": s.vm_name, "vmware_host_id": s.vmware_host_id,
+        "vmware_host_name": s.vmware_host.name if s.vmware_host else None,
+        "xcp_host_id": s.xcp_host_id,
+        "xcp_host_name": s.xcp_host.name if s.xcp_host else None,
+        "app_name": s.app_name,
+        "app_data_paths": json.loads(s.app_data_paths or "[]"),
+        "app_db_type": s.app_db_type, "app_db_name": s.app_db_name,
+        "is_active": s.is_active,
+    }
