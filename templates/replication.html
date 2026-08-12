@@ -394,6 +394,9 @@ function renderCard(j) {
         <button class="btn btn-sm btn-outline-danger" onclick="cancelReplication(${j.id})">
           <i class="bi bi-stop-circle me-1"></i>Interrompi
         </button>` : ''}
+        <button class="btn btn-sm btn-outline-secondary" title="Forza sync completo al prossimo avvio" onclick="resetCbt(${j.id},'${j.name}')">
+          <i class="bi bi-arrow-repeat" style="color:#a78bfa"></i>
+        </button>
         <button class="btn btn-sm btn-danger ms-auto" onclick="openPromote(${j.id})" ${isFailover ? 'disabled' : ''}>
           <i class="bi bi-lightning-fill me-1"></i>Failover manuale
         </button>
@@ -576,6 +579,14 @@ async function pauseJob(id) {
 async function resumeJob(id) {
   try { await api('POST', `/api/replication/${id}/resume`); loadJobs(); } catch(e) { showToast(e.message,'danger'); }
 }
+async function resetCbt(id, name) {
+  if (!confirm(`Resettare lo stato CBT della replica "${name}"?\nIl prossimo sync sarà completo (più lento ma necessario dopo un restore).`)) return;
+  try {
+    await api('DELETE', `/api/replication/${id}/cbt`);
+    showToast('CBT resettato — il prossimo sync sarà completo', 'info');
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
 async function deleteJob(id) {
   if (!confirm('Eliminare questo job di replica? La VM standby NON verrà eliminata da ESXi.')) return;
   try { await api('DELETE', `/api/replication/${id}`); loadJobs(); showToast('Job eliminato','success'); } catch(e) { showToast(e.message,'danger'); }

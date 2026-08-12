@@ -1,12 +1,19 @@
-"""Replica VM tra host ESXi via ovftool."""
-import subprocess
-import shutil
-import time
-import socket
-import logging
+"""Replica VM tra host ESXi via ovftool (full) e CBT pyvmomi (incrementale)."""
+import json
 import os
+import socket
+import shutil
+import ssl
+import subprocess
 import threading
+import time
+import urllib.parse
+import logging
 from datetime import datetime, timezone
+
+import requests
+from pyVim.connect import SmartConnect, Disconnect
+from pyVmomi import vim
 
 from app.crypto import decrypt
 
@@ -115,6 +122,277 @@ def _tail(text: str, limit: int = 3000) -> str:
     return "... output precedente omesso ...\n" + text[-limit:]
 
 
+# ── Helpers pyvmomi per CBT ──────────────────────────────────────────────────
+
+def _esxi_connect(host_cfg):
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    if not host_cfg.ssl_verify:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return SmartConnect(
+        host=host_cfg.host, port=host_cfg.port or 443,
+        user=host_cfg.username, pwd=decrypt(host_cfg.password_enc),
+        sslContext=ctx,
+    )
+
+
+def _find_vm_by_name(si, name):
+    container = si.RetrieveContent().viewManager.CreateContainerView(
+        si.RetrieveContent().rootFolder, [vim.VirtualMachine], True
+    )
+    return next((v for v in container.view if v.name == name), None)
+
+
+def _wait_pyvmomi_task(task, log_fn=None):
+    while task.info.state in (vim.TaskInfo.State.running, vim.TaskInfo.State.queued):
+        time.sleep(3)
+    if task.info.state != vim.TaskInfo.State.success:
+        raise RuntimeError(f"Task ESXi fallito: {task.info.error.localizedMessage}")
+
+
+def _find_snap_ref(vm, snap_name):
+    def _search(tree):
+        for s in tree:
+            if s.name == snap_name:
+                return s.snapshot
+            found = _search(s.childSnapshotList)
+            if found:
+                return found
+        return None
+    return _search(vm.snapshot.rootSnapshotList) if vm.snapshot else None
+
+
+def _esxi_http_session(host_cfg, si):
+    session = requests.Session()
+    session.verify = host_cfg.ssl_verify
+    cookie_raw = si._stub.cookie
+    cookie_val = cookie_raw.split('"')[1] if '"' in cookie_raw else cookie_raw
+    session.cookies.set("vmware_soap_session", cookie_val)
+    return session
+
+
+def _flat_url(host_cfg, rel_path, ds_name):
+    port = host_cfg.port or 443
+    flat = rel_path.replace(".vmdk", "-flat.vmdk")
+    return (f"https://{host_cfg.host}:{port}/folder/{urllib.parse.quote(flat)}"
+            f"?dcPath=ha-datacenter&dsName={urllib.parse.quote(ds_name)}")
+
+
+def setup_repl_cbt_baseline(src_host, src_vm_name, dst_host, dst_vm_name, log_fn=None) -> dict:
+    """
+    Da chiamare dopo il primo sync completo via ovftool.
+    Abilita CBT sulla sorgente, crea snapshot baseline, legge changeId iniziali
+    e mappa i VMDK della destinazione. Ritorna disk_states JSON-serializable.
+    """
+    snap_name = f"repl_base_{int(time.time())}"
+    si_src = _esxi_connect(src_host)
+    try:
+        vm = _find_vm_by_name(si_src, src_vm_name)
+        if not vm:
+            raise ValueError(f"VM '{src_vm_name}' non trovata su {src_host.host}")
+
+        # Abilita CBT
+        if not vm.config.changeTrackingEnabled:
+            spec = vim.vm.ConfigSpec()
+            spec.changeTrackingEnabled = True
+            _wait_pyvmomi_task(vm.ReconfigVM_Task(spec=spec), log_fn)
+            _emit(log_fn, "CBT abilitato sulla VM sorgente")
+
+        # Raccoglie info dischi sorgente
+        src_disks = {}
+        for dev in vm.config.hardware.device:
+            if isinstance(dev, vim.vm.device.VirtualDisk):
+                fn = dev.backing.fileName
+                src_disks[dev.key] = {
+                    "src_filename": fn,
+                    "size": dev.capacityInBytes,
+                }
+
+        # Snapshot baseline
+        _emit(log_fn, "Snapshot baseline CBT in corso...")
+        _wait_pyvmomi_task(vm.CreateSnapshot_Task(
+            name=snap_name, description="CBT baseline replica",
+            memory=False, quiesce=False,
+        ), log_fn)
+
+        snap_ref = _find_snap_ref(vm, snap_name)
+        for dev in snap_ref.config.hardware.device:
+            if isinstance(dev, vim.vm.device.VirtualDisk) and dev.key in src_disks:
+                cid = getattr(dev.backing, "changeId", None)
+                if cid:
+                    src_disks[dev.key]["change_id"] = cid
+
+        # Mappa VMDK destinazione (stesso ordine di disco)
+        si_dst = _esxi_connect(dst_host)
+        try:
+            vm_dst = _find_vm_by_name(si_dst, dst_vm_name)
+            if vm_dst:
+                dst_devs = [d for d in vm_dst.config.hardware.device
+                            if isinstance(d, vim.vm.device.VirtualDisk)]
+                src_keys = sorted(src_disks.keys())
+                for i, dev in enumerate(dst_devs):
+                    if i < len(src_keys):
+                        src_disks[src_keys[i]]["dst_filename"] = dev.backing.fileName
+        finally:
+            Disconnect(si_dst)
+
+        disk_states = {
+            str(k): {
+                "change_id": v["change_id"],
+                "src_filename": v["src_filename"],
+                "dst_filename": v.get("dst_filename", ""),
+                "size": v["size"],
+            }
+            for k, v in src_disks.items()
+            if "change_id" in v
+        }
+        _emit(log_fn, f"CBT baseline pronto: {len(disk_states)} disco/i — sync successivi saranno incrementali")
+        return disk_states
+
+    finally:
+        try:
+            vm2 = _find_vm_by_name(si_src, src_vm_name)
+            if vm2:
+                snap = _find_snap_ref(vm2, snap_name)
+                if snap:
+                    snap.RemoveSnapshot_Task(removeChildren=False)
+        except Exception:
+            pass
+        Disconnect(si_src)
+
+
+def sync_vm_cbt_incremental(job, prev_disk_states: dict, log_fn=None) -> dict:
+    """
+    Replica incrementale CBT: trasferisce solo i blocchi modificati.
+    Ritorna i nuovi disk_states da salvare in DB.
+    """
+    src_host = job.source_host
+    dst_host = job.target_host
+    snap_name = f"repl_incr_{int(time.time())}"
+    total_bytes = 0
+
+    si_src = _esxi_connect(src_host)
+    try:
+        vm_src = _find_vm_by_name(si_src, job.source_vm_name)
+        if not vm_src:
+            raise ValueError(f"VM '{job.source_vm_name}' non trovata su {src_host.host}")
+
+        _emit(log_fn, "Creazione snapshot incrementale sulla VM sorgente...")
+        _wait_pyvmomi_task(vm_src.CreateSnapshot_Task(
+            name=snap_name, description="Replica incrementale CBT",
+            memory=False, quiesce=True,
+        ), log_fn)
+        snap_ref = _find_snap_ref(vm_src, snap_name)
+
+        # Nuovi changeId dallo snapshot
+        new_cids = {}
+        for dev in snap_ref.config.hardware.device:
+            if isinstance(dev, vim.vm.device.VirtualDisk):
+                new_cids[dev.key] = getattr(dev.backing, "changeId", None)
+
+        src_session = _esxi_http_session(src_host, si_src)
+
+        si_dst = _esxi_connect(dst_host)
+        dst_session = _esxi_http_session(dst_host, si_dst)
+
+        try:
+            # Spegni VM standby se accesa (necessario per scrivere sul VMDK)
+            vm_dst = _find_vm_by_name(si_dst, job.target_vm_name)
+            if vm_dst and vm_dst.runtime.powerState != vim.VirtualMachinePowerState.poweredOff:
+                _emit(log_fn, "Spegnimento VM standby per applicare aggiornamenti...")
+                _wait_pyvmomi_task(vm_dst.PowerOffVM_Task(), log_fn)
+
+            result_states = {}
+
+            for key_str, state in prev_disk_states.items():
+                disk_key = int(key_str)
+                prev_cid = state["change_id"]
+                src_fn = state["src_filename"]   # [ds] path/vm.vmdk
+                dst_fn = state["dst_filename"]
+                disk_size = state["size"]
+
+                src_ds  = src_fn.split("]")[0].lstrip("[").strip()
+                src_rel = src_fn.split("] ")[1].strip()
+                dst_ds  = dst_fn.split("]")[0].lstrip("[").strip()
+                dst_rel = dst_fn.split("] ")[1].strip()
+
+                _emit(log_fn, f"Disco {os.path.basename(src_rel)}: query blocchi modificati...")
+
+                try:
+                    info = vm_src.QueryChangedDiskAreas(
+                        snapshot=snap_ref, deviceKey=disk_key,
+                        startOffset=0, changeId=prev_cid,
+                    )
+                    extents = info.changedArea
+                except Exception as e:
+                    _emit(log_fn, f"CBT query fallita ({e}): trasferimento completo del disco", "WARNING")
+                    info = vm_src.QueryChangedDiskAreas(
+                        snapshot=snap_ref, deviceKey=disk_key,
+                        startOffset=0, changeId="*",
+                    )
+                    extents = info.changedArea
+
+                changed_mb = round(sum(e.length for e in extents) / 1024 / 1024, 1)
+                _emit(log_fn, f"  {len(extents)} extent modificati — {changed_mb} MB da trasferire")
+
+                if not extents:
+                    _emit(log_fn, "  Nessuna modifica — disco aggiornato")
+                    result_states[key_str] = {**state, "change_id": new_cids.get(disk_key, prev_cid)}
+                    continue
+
+                src_flat_url = _flat_url(src_host, src_rel, src_ds)
+                dst_flat_url = _flat_url(dst_host, dst_rel, dst_ds)
+
+                for i, extent in enumerate(extents):
+                    start  = extent.start
+                    length = extent.length
+
+                    # Leggi extent dalla sorgente (disco congelato dallo snapshot)
+                    r = src_session.get(
+                        src_flat_url,
+                        headers={"Range": f"bytes={start}-{start+length-1}"},
+                        stream=True, timeout=300,
+                    )
+                    if r.status_code not in (200, 206):
+                        raise RuntimeError(f"Download extent fallito: HTTP {r.status_code}")
+                    data = b"".join(r.iter_content(chunk_size=1024 * 1024))
+
+                    # Scrivi sulla destinazione
+                    put_r = dst_session.put(
+                        dst_flat_url, data=data,
+                        headers={
+                            "Content-Type": "application/octet-stream",
+                            "Content-Range": f"bytes {start}-{start+len(data)-1}/{disk_size}",
+                        },
+                        timeout=300,
+                    )
+                    if put_r.status_code not in (200, 201, 204):
+                        raise RuntimeError(f"Upload extent fallito: HTTP {put_r.status_code}")
+
+                    total_bytes += len(data)
+                    if (i + 1) % 20 == 0 or i == len(extents) - 1:
+                        _emit(log_fn, f"  {i+1}/{len(extents)} extent — {round(total_bytes/1024/1024, 1)} MB totali")
+
+                result_states[key_str] = {**state, "change_id": new_cids.get(disk_key, prev_cid)}
+
+        finally:
+            Disconnect(si_dst)
+
+        _emit(log_fn, f"Replica CBT incrementale completata: {round(total_bytes/1024/1024, 1)} MB trasferiti")
+        return result_states
+
+    finally:
+        try:
+            vm2 = _find_vm_by_name(si_src, job.source_vm_name)
+            if vm2:
+                snap = _find_snap_ref(vm2, snap_name)
+                if snap:
+                    snap.RemoveSnapshot_Task(removeChildren=False)
+        except Exception:
+            pass
+        Disconnect(si_src)
+
+
 def _get_vm_networks(host_cfg) -> list[str]:
     """Legge le reti OVF della VM sorgente (nomi rete nei device)."""
     try:
@@ -205,13 +483,63 @@ def _vi_url(host, vm_name: str, decrypt_fn=None) -> str:
     return f"vi://{user_enc}:{pass_enc}@{host.host}:{host.port or 443}/{vm_name}"
 
 
-def sync_vm(job, log_fn=None) -> str:
+def sync_vm(job, db_session=None, log_fn=None) -> str:
     """
-    Copia VM-A su VM-B via ovftool diretto ESXi→ESXi.
-    Restituisce output log come stringa.
+    Replica VM-A su VM-B.
+    - Prima volta: ovftool completo + setup CBT baseline
+    - Volte successive: CBT incrementale (solo blocchi modificati)
+    """
+    from app.models import VmReplCbtState
+
+    # Controlla se esiste uno stato CBT per questo job
+    cbt_state = None
+    if db_session:
+        cbt_state = db_session.query(VmReplCbtState).filter_by(job_id=job.id).first()
+
+    if cbt_state and cbt_state.disk_states and cbt_state.disk_states != "{}":
+        prev = json.loads(cbt_state.disk_states)
+        _emit(log_fn, f"Replica incrementale CBT — {len(prev)} disco/i tracciati (solo blocchi modificati)")
+        new_states = sync_vm_cbt_incremental(job, prev, log_fn)
+        if db_session:
+            cbt_state.disk_states = json.dumps(new_states)
+            db_session.commit()
+        return "Replica incrementale CBT completata"
+
+    # Prima volta o CBT non disponibile: sync completo via ovftool
+    result = _sync_vm_full(job, log_fn)
+
+    # Dopo il sync completo, imposta il baseline CBT
+    if db_session:
+        try:
+            _emit(log_fn, "Inizializzazione CBT per sync incrementali futuri...")
+            disk_states = setup_repl_cbt_baseline(
+                job.source_host, job.source_vm_name,
+                job.target_host, job.target_vm_name,
+                log_fn,
+            )
+            if disk_states:
+                if cbt_state:
+                    cbt_state.disk_states = json.dumps(disk_states)
+                else:
+                    cbt_state = VmReplCbtState(
+                        job_id=job.id,
+                        disk_states=json.dumps(disk_states),
+                    )
+                    db_session.add(cbt_state)
+                db_session.commit()
+                _emit(log_fn, "CBT attivato — il prossimo sync trasferirà solo le modifiche")
+        except Exception as e:
+            _emit(log_fn, f"Setup CBT non riuscito ({e}) — i sync resteranno completi", "WARNING")
+
+    return result
+
+
+def _sync_vm_full(job, log_fn=None) -> str:
+    """
+    Sync completo via ovftool (usato per il primo sync o se CBT non disponibile).
     """
     started = time.monotonic()
-    _emit(log_fn, "Preparazione replica VM-to-VM")
+    _emit(log_fn, "Preparazione replica VM-to-VM (sync completo)")
     ovftool = _find_ovftool()
 
     src_host = job.source_host

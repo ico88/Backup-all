@@ -273,6 +273,20 @@ class BackupLog(Base):
     run = relationship("BackupRun", back_populates="logs")
 
 
+class VmReplCbtState(Base):
+    """Stato CBT per replica incrementale: changeId per disco per job di replica."""
+    __tablename__ = "vm_repl_cbt_states"
+
+    id = Column(Integer, primary_key=True)
+    job_id = Column(Integer, ForeignKey("vm_replication_jobs.id"), nullable=False, unique=True)
+    # JSON: {disk_key: {"change_id": "...", "src_filename": "...", "dst_filename": "...", "size": N}}
+    disk_states = Column(Text, nullable=False, default="{}")
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    job = relationship("VMReplicationJob", backref="cbt_state", uselist=False)
+
+
 class VmCbtState(Base):
     """Stato CBT per backup incrementali ESXi: changeId per disco per job."""
     __tablename__ = "vm_cbt_states"

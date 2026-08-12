@@ -79,6 +79,17 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@router.delete("/{job_id}/cbt", status_code=204)
+def reset_cbt(job_id: int, db: Session = Depends(get_db)):
+    """Resetta stato CBT: il prossimo sync sarà completo via ovftool."""
+    from app.models import VmReplCbtState
+    cbt = db.query(VmReplCbtState).filter_by(job_id=job_id).first()
+    if cbt:
+        db.delete(cbt)
+        db.commit()
+    return None
+
+
 @router.post("/{job_id}/pause")
 def pause_job(job_id: int, db: Session = Depends(get_db)):
     j = db.get(VMReplicationJob, job_id)
@@ -242,7 +253,7 @@ def _execute_sync(job_id: int, triggered_by: str = "scheduler"):
                 last_flush = now
 
         try:
-            output = sync_vm(j, log_fn=append_live_log)
+            output = sync_vm(j, db_session=db, log_fn=append_live_log)
             run.status = ReplicationSyncStatus.SUCCESS
             run.log_output = "\n".join(logs)
             j.last_sync_status = ReplicationSyncStatus.SUCCESS

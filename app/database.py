@@ -37,6 +37,7 @@ def _migrate():
             ("servers", "xcp_host_id", "INTEGER REFERENCES xcp_hosts(id)"),
             ("backup_runs", "backup_mode", "VARCHAR(20) DEFAULT 'full'"),
             ("vm_replication_jobs", "target_network", "VARCHAR(255)"),
+            ("vm_replication_runs", "bytes_transferred", "INTEGER"),
         ]
         for table, column, col_type in migrations:
             try:
