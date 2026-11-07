@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Backup-All{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --cri-red: #e53935;
+      --cri-dark: #b71c1c;
+      --sidebar-bg: #13151a;
+      --sidebar-width: 230px;
+      --topbar-h: 52px;
+      --body-bg: #0f1117;
+      --card-bg: #1a1d24;
+      --card-border: #252830;
+      --text-primary: #e8eaf0;
+      --text-muted: #6b7280;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --info: #3b82f6;
+    }
+    * { box-sizing: border-box; }
+    body { background: var(--body-bg); color: var(--text-primary); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; font-size: 14px; margin: 0; }
+
+    /* ── TOPBAR ── */
+    .topbar {
+      position: fixed; top: 0; left: 0; right: 0; height: var(--topbar-h);
+      background: #0d0f14; border-bottom: 1px solid var(--card-border);
+      display: flex; align-items: center; padding: 0 1rem; z-index: 1000; gap: 1rem;
+    }
+    .topbar .brand { display: flex; align-items: center; gap: .6rem; font-weight: 700; font-size: 1rem; color: var(--text-primary); text-decoration: none; width: var(--sidebar-width); }
+    .topbar .brand .logo-dot { width: 8px; height: 8px; background: var(--cri-red); border-radius: 50%; }
+    .topbar-right { margin-left: auto; display: flex; align-items: center; gap: .75rem; }
+    .topbar-badge { background: #1e2130; border: 1px solid var(--card-border); border-radius: 6px; padding: .25rem .75rem; font-size: .78rem; color: var(--text-muted); display: flex; align-items: center; gap: .4rem; }
+    .topbar-badge .dot-green { width: 6px; height: 6px; background: var(--success); border-radius: 50%; animation: pulse-green 2s infinite; }
+    @keyframes pulse-green { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .user-menu { position: relative; cursor: pointer; }
+    .user-avatar { width: 32px; height: 32px; background: var(--cri-red); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; }
+    .user-dropdown { position: absolute; right: 0; top: calc(100% + 8px); background: #1e2130; border: 1px solid var(--card-border); border-radius: 8px; min-width: 180px; z-index: 999; box-shadow: 0 8px 24px rgba(0,0,0,.4); display: none; }
+    .user-dropdown.show { display: block; }
+    .user-dropdown a { display: flex; align-items: center; gap: .6rem; padding: .6rem 1rem; color: var(--text-primary); text-decoration: none; font-size: .84rem; }
+    .user-dropdown a:hover { background: rgba(255,255,255,.05); }
+    .user-dropdown hr { border-color: var(--card-border); margin: .25rem 0; }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      position: fixed; top: var(--topbar-h); left: 0; bottom: 0; width: var(--sidebar-width);
+      background: var(--sidebar-bg); border-right: 1px solid var(--card-border);
+      padding: 1rem .6rem; overflow-y: auto; z-index: 900;
+    }
+    .nav-section { color: var(--text-muted); font-size: .68rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: .5rem .6rem .3rem; margin-top: .5rem; }
+    .nav-link { display: flex; align-items: center; gap: .6rem; padding: .52rem .8rem; border-radius: 6px; color: #9ca3af; text-decoration: none; font-size: .85rem; transition: background .12s, color .12s; margin-bottom: 1px; }
+    .nav-link i { font-size: .95rem; width: 18px; text-align: center; flex-shrink: 0; }
+    .nav-link:hover { background: rgba(255,255,255,.06); color: var(--text-primary); }
+    .nav-link.active { background: rgba(229,57,53,.15); color: var(--cri-red); font-weight: 600; }
+    .nav-link .badge-count { margin-left: auto; background: var(--cri-red); color: #fff; border-radius: 10px; font-size: .65rem; padding: .1rem .4rem; }
+
+    /* ── MAIN ── */
+    .main-content { margin-left: var(--sidebar-width); margin-top: var(--topbar-h); padding: 1.5rem 2rem; min-height: calc(100vh - var(--topbar-h)); }
+
+    /* ── CARDS ── */
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; }
+    .card-header { background: transparent; border-bottom: 1px solid var(--card-border); padding: .85rem 1.1rem; font-weight: 600; font-size: .88rem; color: var(--text-primary); }
+    .card-body { color: var(--text-primary); }
+    .card-footer { background: transparent; border-top: 1px solid var(--card-border); }
+
+    /* Stats cards */
+    .stat-card { border-radius: 10px; padding: 1.1rem 1.3rem; border: 1px solid var(--card-border); display: flex; align-items: center; gap: 1rem; background: var(--card-bg); }
+    .stat-icon { width: 46px; height: 46px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.25rem; flex-shrink: 0; }
+    .stat-icon.red   { background: rgba(229,57,53,.15);  color: var(--cri-red); }
+    .stat-icon.blue  { background: rgba(59,130,246,.15); color: var(--info); }
+    .stat-icon.green { background: rgba(34,197,94,.15);  color: var(--success); }
+    .stat-icon.amber { background: rgba(245,158,11,.15); color: var(--warning); }
+    .stat-val { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+    .stat-lbl { font-size: .75rem; color: var(--text-muted); margin-top: .2rem; }
+
+    /* Tables */
+    .table { color: #fff; --bs-table-color: #fff; --bs-table-bg: transparent; --bs-table-hover-bg: rgba(255,255,255,.04); }
+    .table th { color: #fff; font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; border-color: var(--card-border); padding: .6rem 1rem; }
+    .table td { color: #fff; border-color: var(--card-border); padding: .7rem 1rem; vertical-align: middle; }
+    .table-hover tbody tr:hover td { background: rgba(255,255,255,.03); }
+
+    /* Status badges */
+    .badge-status { display: inline-flex; align-items: center; gap: .35rem; padding: .22rem .6rem; border-radius: 20px; font-size: .72rem; font-weight: 600; }
+    .badge-status::before { content:''; width:6px; height:6px; border-radius:50%; background:currentColor; }
+    .bs-success { background:rgba(34,197,94,.12);  color:var(--success); }
+    .bs-failed  { background:rgba(239,68,68,.12);  color:var(--danger); }
+    .bs-running { background:rgba(59,130,246,.12); color:var(--info); animation: pulse-run 1.5s infinite; }
+    .bs-partial { background:rgba(245,158,11,.12); color:var(--warning); }
+    .bs-active  { background:rgba(34,197,94,.1);   color:var(--success); }
+    .bs-paused  { background:rgba(245,158,11,.1);  color:var(--warning); }
+    .bs-disabled{ background:rgba(107,114,128,.1); color:var(--text-muted); }
+    @keyframes pulse-run { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+    /* Buttons */
+    .btn-primary   { background:var(--cri-red);  border-color:var(--cri-red);  color:#fff; }
+    .btn-primary:hover { background:var(--cri-dark); border-color:var(--cri-dark); }
+    .btn-outline-secondary { border-color: var(--card-border); color: var(--text-muted); }
+    .btn-outline-secondary:hover { background: rgba(255,255,255,.06); color: var(--text-primary); border-color: #3a3f4b; }
+    .btn-sm { font-size: .78rem; padding: .28rem .65rem; }
+    .btn-icon { width:30px; height:30px; padding:0; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; }
+
+    /* Form controls */
+    .form-control, .form-select {
+      background: #0d0f14; border: 1px solid var(--card-border);
+      color: var(--text-primary); border-radius: 7px;
+    }
+    .form-control:focus, .form-select:focus {
+      background: #0d0f14; border-color: var(--cri-red); color: var(--text-primary);
+      box-shadow: 0 0 0 3px rgba(229,57,53,.15);
+    }
+    .form-control::placeholder { color: var(--text-muted); }
+    .form-label { font-size: .82rem; color: #9ca3af; font-weight: 500; margin-bottom: .3rem; }
+    .form-check-input { background-color: #1a1d24; border-color: var(--card-border); }
+    .form-check-input:checked { background-color: var(--cri-red); border-color: var(--cri-red); }
+    .input-group-text { background: #1a1d24; border-color: var(--card-border); color: var(--text-muted); }
+
+    /* Log box */
+    .log-box { background: #0a0c10; color: #c9d1d9; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: .78rem; border-radius: 8px; padding: 1rem; max-height: 520px; overflow-y: auto; border: 1px solid var(--card-border); }
+    .log-ERROR { color: #f87171; }
+    .log-WARNING { color: #fbbf24; }
+    .log-INFO { color: #60a5fa; }
+
+    /* Wizard steps */
+    .wizard-steps { display: flex; align-items: center; gap: 0; margin-bottom: 2rem; }
+    .wizard-step { display: flex; align-items: center; gap: .5rem; padding: .5rem .8rem; border-radius: 6px; font-size: .82rem; color: var(--text-muted); flex: 1; }
+    .wizard-step.active { color: var(--cri-red); font-weight: 600; }
+    .wizard-step.done { color: var(--success); }
+    .wizard-step-num { width: 26px; height: 26px; border-radius: 50%; border: 2px solid currentColor; display: flex; align-items: center; justify-content: center; font-size: .75rem; font-weight: 700; flex-shrink: 0; }
+    .wizard-connector { flex: 0 0 24px; height: 1px; background: var(--card-border); }
+
+    /* Misc */
+    .page-title { font-size: 1.15rem; font-weight: 700; color: var(--text-primary); }
+    .text-muted { color: var(--text-muted) !important; }
+    .divider { border-color: var(--card-border); }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2a2d38; border-radius: 3px; }
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes indeterminate { 0%{transform:translateX(-100%)} 100%{transform:translateX(500%)} }
+    .alert-dark-info { background: rgba(59,130,246,.1); border: 1px solid rgba(59,130,246,.25); color: #93c5fd; border-radius: 7px; padding: .7rem 1rem; font-size: .83rem; }
+    .modal-content { background: #1a1d24; border: 1px solid var(--card-border); color: var(--text-primary); }
+    .modal-header { border-color: var(--card-border); }
+    .modal-footer { border-color: var(--card-border); }
+    .dropdown-menu { background: #1e2130; border: 1px solid var(--card-border); }
+    .dropdown-item { color: var(--text-primary); font-size: .84rem; }
+    .dropdown-item:hover { background: rgba(255,255,255,.05); color: var(--text-primary); }
+  </style>
+</head>
+<body>
+
+<!-- ── TOPBAR ── -->
+<header class="topbar">
+  <a class="brand" href="/dashboard">
+    <i class="bi bi-shield-shaded" style="color:var(--cri-red);font-size:1.2rem"></i>
+    <span>Backup<span style="color:var(--cri-red)">All</span></span>
+    <small id="org-name" style="font-weight:400;color:var(--text-muted);font-size:.72rem;margin-left:2px"></small>
+  </a>
+  <div class="topbar-right">
+    <div class="topbar-badge">
+      <span class="dot-green"></span> Sistema attivo
+    </div>
+    <div class="topbar-badge" id="tb-next-run" style="display:none">
+      <i class="bi bi-clock" style="font-size:.8rem"></i> <span id="tb-next-text">—</span>
+    </div>
+    <div class="user-menu" onclick="toggleUserMenu(this)">
+      <div class="user-avatar" id="user-avatar-initials">?</div>
+      <div class="user-dropdown" id="user-dropdown">
+        <div style="padding:.6rem 1rem .4rem; font-size:.8rem; color:var(--text-muted)">
+          <div style="font-weight:600;color:var(--text-primary)" id="dd-username">—</div>
+          <div id="dd-email" style="font-size:.75rem"></div>
+        </div>
+        <hr>
+        <a href="/settings"><i class="bi bi-gear"></i> Impostazioni</a>
+        <a href="#" onclick="changePassword()"><i class="bi bi-key"></i> Cambia password</a>
+        <hr>
+        <a href="#" onclick="doLogout()" style="color:var(--danger)"><i class="bi bi-box-arrow-right"></i> Esci</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ── SIDEBAR ── -->
+<nav class="sidebar">
+  <div class="nav-section">Monitoraggio</div>
+  <a href="/dashboard" class="nav-link {% if request.url.path == '/dashboard' %}active{% endif %}">
+    <i class="bi bi-speedometer2"></i> Dashboard
+  </a>
+  <a href="/jobs" class="nav-link {% if '/jobs' in request.url.path %}active{% endif %}">
+    <i class="bi bi-play-circle"></i> Job di Backup
+  </a>
+  <a href="/history" class="nav-link {% if 'history' in request.url.path or 'logs' in request.url.path %}active{% endif %}">
+    <i class="bi bi-clock-history"></i> Storico Esecuzioni
+  </a>
+  <a href="/reports" class="nav-link {% if 'reports' in request.url.path %}active{% endif %}">
+    <i class="bi bi-bar-chart-line"></i> Report &amp; Statistiche
+  </a>
+  <a href="/replication" class="nav-link {% if 'replication' in request.url.path %}active{% endif %}">
+    <i class="bi bi-arrow-repeat"></i> Replica VM
+  </a>
+
+  <div class="nav-section" style="margin-top:1rem">Configurazione</div>
+  <a href="/wizard/server" class="nav-link {% if 'wizard/server' in request.url.path %}active{% endif %}">
+    <i class="bi bi-hdd-stack"></i> Sorgenti
+  </a>
+  <a href="/wizard/destination" class="nav-link {% if 'wizard/destination' in request.url.path %}active{% endif %}">
+    <i class="bi bi-hdd-network"></i> Destinazioni
+  </a>
+  <a href="/wizard/job" class="nav-link {% if 'wizard/job' in request.url.path %}active{% endif %}">
+    <i class="bi bi-plus-square"></i> Nuovo Job
+  </a>
+  <a href="/settings" class="nav-link {% if 'settings' in request.url.path %}active{% endif %}">
+    <i class="bi bi-sliders"></i> Impostazioni
+  </a>
+
+  <div style="margin-top:auto; padding-top:1rem; border-top:1px solid var(--card-border); margin-top:2rem">
+    <a href="/docs" class="nav-link {% if 'docs' in request.url.path %}active{% endif %}" style="font-size:.78rem">
+      <i class="bi bi-book"></i> Guida
+    </a>
+  </div>
+</nav>
+
+<!-- ── MAIN ── -->
+<main class="main-content">
+  {% block content %}{% endblock %}
+</main>
+
+<!-- Change Password Modal -->
+<div class="modal fade" id="changePwModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title"><i class="bi bi-key me-2"></i>Cambia Password</h6>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Password attuale</label>
+          <input type="password" id="cp-current" class="form-control form-control-sm">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Nuova password</label>
+          <input type="password" id="cp-new" class="form-control form-control-sm">
+        </div>
+        <div class="mb-2">
+          <label class="form-label">Conferma nuova password</label>
+          <input type="password" id="cp-confirm" class="form-control form-control-sm">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button class="btn btn-sm btn-primary" onclick="submitChangePw()">Salva</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+function showToast(msg, type='success') {
+  const colors = {success:'#22c55e',danger:'#ef4444',warning:'#f59e0b',info:'#3b82f6'};
+  const div = document.createElement('div');
+  div.style.cssText = `position:fixed;bottom:1.5rem;right:1.5rem;z-index:9999;background:#1e2130;border:1px solid #2a2d38;border-left:3px solid ${colors[type]||colors.info};border-radius:8px;padding:.7rem 1rem;color:#e8eaf0;font-size:.83rem;max-width:320px;box-shadow:0 8px 24px rgba(0,0,0,.5);display:flex;align-items:center;gap:.6rem`;
+  const icon = {success:'check-circle-fill',danger:'x-circle-fill',warning:'exclamation-triangle-fill',info:'info-circle-fill'}[type]||'info-circle-fill';
+  div.innerHTML = `<i class="bi bi-${icon}" style="color:${colors[type]||colors.info};flex-shrink:0"></i><span>${msg}</span>`;
+  document.body.appendChild(div);
+  setTimeout(()=>{div.style.transition='opacity .3s';div.style.opacity='0';setTimeout(()=>div.remove(),300);},4000);
+}
+
+async function api(method, url, body) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(url, opts);
+  if (!r.ok) {
+    const e = await r.json().catch(()=>({detail: r.statusText}));
+    if (r.status === 401) { window.location.href='/login'; return; }
+    throw new Error(e.detail || r.statusText);
+  }
+  if (r.status === 204 || r.headers.get('content-length') === '0') return null;
+  return r.json().catch(() => null);
+}
+
+function toggleUserMenu(el) {
+  document.getElementById('user-dropdown').classList.toggle('show');
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('.user-menu')) {
+    document.getElementById('user-dropdown')?.classList.remove('show');
+  }
+});
+
+async function doLogout() {
+  await fetch('/api/auth/logout', {method:'POST'});
+  window.location.href='/login';
+}
+
+function changePassword() {
+  document.getElementById('user-dropdown').classList.remove('show');
+  new bootstrap.Modal(document.getElementById('changePwModal')).show();
+}
+
+async function submitChangePw() {
+  const cur = document.getElementById('cp-current').value;
+  const nw = document.getElementById('cp-new').value;
+  const cf = document.getElementById('cp-confirm').value;
+  if (nw !== cf) { showToast('Le password non coincidono','warning'); return; }
+  if (!nw || nw.length < 6) { showToast('Password troppo corta (min 6 caratteri)','warning'); return; }
+  try {
+    await api('POST','/api/auth/change-password',{current_password:cur,new_password:nw});
+    bootstrap.Modal.getInstance(document.getElementById('changePwModal')).hide();
+    showToast('Password aggiornata con successo');
+  } catch(e) { showToast(e.message,'danger'); }
+}
+
+// Carica info utente
+(async()=>{
+  try {
+    const me = await api('GET','/api/auth/me');
+    if (!me) return;
+    const init = me.username.substring(0,2).toUpperCase();
+    document.getElementById('user-avatar-initials').textContent = init;
+    document.getElementById('dd-username').textContent = me.username;
+    document.getElementById('dd-email').textContent = me.email || '';
+    // Carica nome organizzazione
+    try {
+      const g = await api('GET', '/api/settings/general');
+      if (g.organization) document.getElementById('org-name').textContent = g.organization;
+    } catch(e) {}
+  } catch(e){}
+})();
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

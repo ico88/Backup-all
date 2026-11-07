@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}Job di Backup{% endblock %}
+
+{% block content %}<div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="page-title"><i class="bi bi-play-circle me-2" style="color:var(--cri-red)"></i>Job di Backup</div>
+  <a href="/wizard/job" class="btn btn-primary btn-sm"><i class="bi bi-plus me-1"></i>Nuovo Job</a>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead><tr>
+          <th>Nome</th><th>Sorgente</th><th>Destinazione</th><th>Tipo</th>
+          <th>Schedule</th><th>Retention</th><th>Stato</th><th>Ultimo run</th><th></th>
+        </tr></thead>
+        <tbody id="jobs-tbody">
+          <tr><td colspan="9" class="text-center py-4 text-muted"><i class="bi bi-arrow-repeat spin me-2"></i>Caricamento…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<!-- Modal modifica job -->
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content" style="background:var(--card-bg);border-color:var(--card-border)">
+      <div class="modal-header" style="border-color:var(--card-border)">
+        <h5 class="modal-title" style="color:var(--text-primary)"><i class="bi bi-pencil me-2" style="color:var(--cri-red)"></i>Modifica Job</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Nome <span class="text-danger">*</span></label>
+            <input class="form-control" id="ej-name">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Descrizione</label>
+            <input class="form-control" id="ej-desc">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Sorgente <span class="text-danger">*</span></label>
+            <select class="form-select" id="ej-server"></select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Destinazione <span class="text-danger">*</span></label>
+            <select class="form-select" id="ej-dest"></select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Tipo backup</label>
+            <select class="form-select" id="ej-type">
+              <option value="vm_snapshot">VM Snapshot</option>
+              <option value="app_data">Dati App</option>
+              <option value="full">Completo</option>
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Schedule (cron)</label>
+            <input class="form-control font-monospace" id="ej-cron" placeholder="0 2 * * *">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Retention (copie)</label>
+            <input class="form-control" type="number" id="ej-retention" min="1" max="365">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Email notifica</label>
+            <input class="form-control" id="ej-email" type="email" placeholder="opzionale">
+          </div>
+          <div class="col-md-6 d-flex align-items-end gap-3 pb-1">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="ej-notify-fail">
+              <label class="form-check-label" for="ej-notify-fail">Notifica fallimento</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="ej-notify-ok">
+              <label class="form-check-label" for="ej-notify-ok">Notifica successo</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="ej-integrity">
+              <label class="form-check-label" for="ej-integrity">Verifica integrità</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" style="border-color:var(--card-border)">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Annulla</button>
+        <button class="btn btn-primary" onclick="saveEdit()"><i class="bi bi-check2 me-1"></i>Salva</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const statusBadge = s => ({
+  success: '<span class="badge-status bs-success">Successo</span>',
+  failed:  '<span class="badge-status bs-failed">Fallito</span>',
+  running: '<span class="badge-status bs-running">In corso</span>',
+  partial: '<span class="badge-status bs-partial">Parziale</span>',
+}[s] || '—');
+
+const jobStatusBadge = s => ({
+  active:   '<span class="badge-status bs-active">Attivo</span>',
+  paused:   '<span class="badge-status bs-paused">In pausa</span>',
+  disabled: '<span class="badge-status bs-disabled">Disattivo</span>',
+}[s] || s);
+
+const typeLabel = {
+  vm_snapshot: '<i class="bi bi-camera me-1"></i>VM Snapshot',
+  app_data: '<i class="bi bi-database me-1"></i>Dati App',
+  full: '<i class="bi bi-archive me-1"></i>Completo'
+};
+
+async function loadJobs() {
+  const jobs = await api('GET','/api/jobs');
+  const tb = document.getElementById('jobs-tbody');
+  if (!jobs.length) {
+    tb.innerHTML='<tr><td colspan="9" class="text-center py-4 text-muted"><i class="bi bi-inbox me-2"></i>Nessun job — <a href="/wizard/job">crea il primo</a></td></tr>';
+    return;
+  }
+  tb.innerHTML = jobs.map(j=>`
+    <tr>
+      <td>
+        <div class="fw-semibold" style="font-size:.85rem">${j.name}</div>
+        ${j.description?`<div style="font-size:.72rem;color:var(--text-muted)">${j.description}</div>`:''}
+        <div style="font-size:.7rem;color:var(--text-muted);margin-top:.15rem">
+          ${j.verify_integrity?'<i class="bi bi-shield-check text-success me-1" title="Integrità verificata"></i>':''}
+          ${j.notify_email?`<i class="bi bi-envelope text-info me-1" title="${j.notify_email}"></i>`:''}
+          ${j.compression?'<i class="bi bi-file-zip" title="Compressione"></i>':''}
+        </div>
+      </td>
+      <td style="font-size:.82rem">${j.server_name||'—'}</td>
+      <td style="font-size:.82rem">${j.destination_name||'—'}</td>
+      <td style="font-size:.78rem;color:#9ca3af">${typeLabel[j.backup_type]||j.backup_type}</td>
+      <td><code style="font-size:.75rem;color:#fbbf24">${j.cron_expression}</code></td>
+      <td style="font-size:.8rem;text-align:center">
+        <span title="Copie mantenute" style="color:var(--text-muted)">
+          <i class="bi bi-layers me-1"></i>${j.retention_copies}
+        </span>
+      </td>
+      <td>${jobStatusBadge(j.status)}</td>
+      <td>
+        ${j.last_run_status ? statusBadge(j.last_run_status) : '<span style="color:var(--text-muted);font-size:.78rem">Mai</span>'}
+        ${j.last_run_at?`<div style="font-size:.7rem;color:var(--text-muted)">${new Date(j.last_run_at).toLocaleDateString('it-IT')}</div>`:''}
+      </td>
+      <td>
+        <div class="d-flex gap-1">
+          <button class="btn btn-icon btn-outline-secondary" title="Esegui ora" onclick="runNow(${j.id},'${j.name}')">
+            <i class="bi bi-play-fill" style="color:var(--cri-red)"></i>
+          </button>
+          <button class="btn btn-icon btn-outline-secondary" title="Modifica" onclick="openEdit(${j.id})">
+            <i class="bi bi-pencil"></i>
+          </button>
+          <button class="btn btn-icon btn-outline-secondary" title="${j.status==='active'?'Metti in pausa':'Riattiva'}"
+            onclick="toggleStatus(${j.id},'${j.status}')">
+            <i class="bi bi-${j.status==='active'?'pause':'play'}-fill"></i>
+          </button>
+          ${j.backup_type==='vm_snapshot'?`<button class="btn btn-icon btn-outline-secondary" title="Reset CBT (forza backup completo)" onclick="resetCbt(${j.id},'${j.name}')">
+            <i class="bi bi-arrow-repeat" style="color:#a78bfa"></i>
+          </button>`:''}
+          <button class="btn btn-icon btn-outline-secondary" title="Elimina" onclick="deleteJob(${j.id},'${j.name}')">
+            <i class="bi bi-trash3" style="color:var(--danger)"></i>
+          </button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+async function runNow(id, name) {
+  if (!confirm(`Avviare subito il backup "${name}"?`)) return;
+  try { await api('POST',`/api/jobs/${id}/run`); showToast('Job avviato in background','info'); setTimeout(loadJobs,2000); }
+  catch(e) { showToast(e.message,'danger'); }
+}
+
+async function toggleStatus(id, current) {
+  const next = current==='active' ? 'paused' : 'active';
+  try { await api('PATCH',`/api/jobs/${id}/status?status=${next}`); loadJobs(); }
+  catch(e) { showToast(e.message,'danger'); }
+}
+
+async function deleteJob(id, name) {
+  if (!confirm(`Eliminare il job "${name}"? Questa azione non può essere annullata.`)) return;
+  try { await api('DELETE',`/api/jobs/${id}`); showToast(`Job "${name}" eliminato`); loadJobs(); }
+  catch(e) { showToast(e.message,'danger'); }
+}
+
+let editingId = null;
+let allServers = [], allDests = [];
+
+async function openEdit(id) {
+  const jobs = await api('GET', '/api/jobs');
+  const j = jobs.find(x => x.id === id);
+  if (!j) return;
+  editingId = id;
+
+  if (!allServers.length) allServers = await api('GET', '/api/servers');
+  if (!allDests.length) allDests = await api('GET', '/api/destinations');
+
+  const sSel = document.getElementById('ej-server');
+  sSel.innerHTML = allServers.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  const dSel = document.getElementById('ej-dest');
+  dSel.innerHTML = allDests.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+
+  document.getElementById('ej-name').value = j.name;
+  document.getElementById('ej-desc').value = j.description || '';
+  sSel.value = j.server_id;
+  dSel.value = j.destination_id;
+  document.getElementById('ej-type').value = j.backup_type;
+  document.getElementById('ej-cron').value = j.cron_expression;
+  document.getElementById('ej-retention').value = j.retention_copies;
+  document.getElementById('ej-email').value = j.notify_email || '';
+  document.getElementById('ej-notify-fail').checked = j.notify_on_failure;
+  document.getElementById('ej-notify-ok').checked = j.notify_on_success;
+  document.getElementById('ej-integrity').checked = j.verify_integrity;
+
+  new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+
+async function saveEdit() {
+  const payload = {
+    name: document.getElementById('ej-name').value,
+    description: document.getElementById('ej-desc').value || null,
+    server_id: +document.getElementById('ej-server').value,
+    destination_id: +document.getElementById('ej-dest').value,
+    backup_type: document.getElementById('ej-type').value,
+    cron_expression: document.getElementById('ej-cron').value,
+    retention_copies: +document.getElementById('ej-retention').value || 7,
+    compression: true,
+    notify_email: document.getElementById('ej-email').value || null,
+    notify_on_failure: document.getElementById('ej-notify-fail').checked,
+    notify_on_success: document.getElementById('ej-notify-ok').checked,
+    verify_integrity: document.getElementById('ej-integrity').checked,
+  };
+  try {
+    await api('PATCH', `/api/jobs/${editingId}`, payload);
+    bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+    showToast('Job aggiornato', 'success');
+    loadJobs();
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
+async function resetCbt(id, name) {
+  if (!confirm(`Resettare lo stato CBT del job "${name}"?\nIl prossimo backup sarà un backup completo.`)) return;
+  try {
+    await api('DELETE', `/api/jobs/${id}/cbt`);
+    showToast('Stato CBT resettato — il prossimo backup sarà completo', 'info');
+  } catch(e) { showToast(e.message, 'danger'); }
+}
+
+loadJobs();
+</script>
+{% endblock %}

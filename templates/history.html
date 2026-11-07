@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Storico Backup{% endblock %}
+
+{% block content %}<div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="page-title"><i class="bi bi-clock-history me-2" style="color:var(--cri-red)"></i>Storico Esecuzioni</div>
+  <select class="form-select form-select-sm w-auto" id="filter-job" onchange="loadRuns()" style="background:#1a1d24;border-color:var(--card-border);color:var(--text-primary);min-width:200px">
+    <option value="">Tutti i job</option>
+  </select>
+</div>
+
+<div class="card">
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0" style="color:#fff">
+        <thead><tr style="color:#fff">
+          <th>Job</th><th>Avviato il</th><th>Durata</th><th>Dimensione</th>
+          <th>Integrità</th><th>Stato</th><th>Avviato da</th><th></th>
+        </tr></thead>
+        <tbody id="runs-tbody">
+          <tr><td colspan="8" class="text-center py-4 text-muted"><i class="bi bi-arrow-repeat spin me-2"></i>Caricamento…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const statusBadge = s => ({
+  success: '<span class="badge-status bs-success">Successo</span>',
+  failed:  '<span class="badge-status bs-failed">Fallito</span>',
+  running: '<span class="badge-status bs-running">In corso</span>',
+  partial: '<span class="badge-status bs-partial">Parziale</span>',
+}[s] || `<span>${s}</span>`);
+
+function fmtDuration(start, end) {
+  if (!end || !start) return '<span class="text-muted">—</span>';
+  const sec = Math.round((new Date(end)-new Date(start))/1000);
+  if (sec < 60) return `${sec}s`;
+  return `${Math.floor(sec/60)}m ${sec%60}s`;
+}
+function fmtSize(b) {
+  if (!b) return '<span class="text-muted">—</span>';
+  if (b>1e9) return (b/1e9).toFixed(1)+' GB';
+  if (b>1e6) return (b/1e6).toFixed(1)+' MB';
+  return (b/1e3).toFixed(0)+' KB';
+}
+
+async function loadJobFilter() {
+  const jobs = await api('GET','/api/jobs');
+  const sel = document.getElementById('filter-job');
+  jobs.forEach(j=>{ const o=document.createElement('option'); o.value=j.id; o.textContent=j.name; sel.appendChild(o); });
+}
+
+async function loadRuns() {
+  const jobId = document.getElementById('filter-job').value;
+  const url = '/api/runs?limit=100' + (jobId?`&job_id=${jobId}`:'');
+  const runs = await api('GET', url);
+  const tb = document.getElementById('runs-tbody');
+  if (!runs.length) {
+    tb.innerHTML='<tr><td colspan="8" class="text-center py-4 text-muted"><i class="bi bi-inbox me-2"></i>Nessuna esecuzione trovata</td></tr>';
+    return;
+  }
+  tb.innerHTML = runs.map(r=>`
+    <tr>
+      <td>
+        <div class="fw-semibold" style="font-size:.84rem">${r.job_name||'Job #'+r.job_id}</div>
+        <div style="font-size:.7rem;margin-top:.1rem">
+          ${r.backup_mode==='incremental_cbt'
+            ? '<span style="color:#a78bfa;border:1px solid #a78bfa;border-radius:4px;padding:0 4px"><i class="bi bi-lightning-charge me-1"></i>Incrementale CBT</span>'
+            : '<span style="color:var(--text-muted)"><i class="bi bi-archive me-1"></i>Completo</span>'}
+        </div>
+        ${r.backup_path?`<div style="font-size:.7rem;color:var(--text-muted);font-family:monospace">${r.backup_path}</div>`:''}
+      </td>
+      <td style="font-size:.8rem">${r.started_at?new Date(r.started_at).toLocaleString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):''}</td>
+      <td style="font-size:.8rem">${fmtDuration(r.started_at,r.finished_at)}</td>
+      <td style="font-size:.8rem">${fmtSize(r.size_bytes)}</td>
+      <td>${r.integrity_verified===true?'<span class="badge-status bs-success" style="font-size:.7rem"><i class="bi bi-shield-check me-1"></i>OK</span>':r.integrity_verified===false?'<span class="badge-status bs-failed" style="font-size:.7rem"><i class="bi bi-shield-x me-1"></i>Fallita</span>':'<span style="color:var(--text-muted);font-size:.75rem">—</span>'}</td>
+      <td>
+        ${statusBadge(r.status)}
+        ${r.error_message?`<div style="font-size:.7rem;color:var(--danger);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.error_message}">${r.error_message.substring(0,50)}…</div>`:''}
+      </td>
+      <td style="font-size:.78rem;color:var(--text-muted)">${r.triggered_by==='manual'?'<i class="bi bi-hand-index me-1"></i>Manuale':'<i class="bi bi-clock me-1"></i>Scheduler'}</td>
+      <td class="d-flex gap-1">
+        <a href="/logs/${r.id}" class="btn btn-icon btn-outline-secondary" title="Vedi log">
+          <i class="bi bi-file-text"></i>
+        </a>
+        ${r.status==='failed'?`<button class="btn btn-icon" style="border:1px solid #f59e0b;color:#fff;background:transparent" title="Riprova backup" onclick="retryJob(${r.job_id},this)"><i class="bi bi-arrow-clockwise"></i></button>`:''}
+      </td>
+    </tr>`).join('');
+}
+
+async function retryJob(jobId, btn) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+  try {
+    await api('POST', `/api/jobs/${jobId}/run`);
+    showToast('Backup riavviato — controlla lo storico tra qualche istante', 'success');
+    setTimeout(loadRuns, 3000);
+  } catch(e) {
+    showToast('Errore: ' + e.message, 'danger');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i>';
+  }
+}
+
+loadJobFilter().then(()=>loadRuns());
+</script>
+{% endblock %}

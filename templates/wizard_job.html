@@ -1,0 +1,263 @@
+{% extends "base.html" %}
+{% block title %}Nuovo Job di Backup{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <a href="/jobs" class="btn btn-outline-secondary btn-sm btn-icon"><i class="bi bi-arrow-left"></i></a>
+  <div class="page-title"><i class="bi bi-plus-square me-2" style="color:var(--cri-red)"></i>Nuovo Job di Backup</div>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-xl-9">
+    <form id="job-form">
+
+      <!-- Sezione 1: Sorgente e Destinazione -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem">1</span>
+          Sorgente e Destinazione
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label">Nome Job</label>
+              <input class="form-control" id="f-name" placeholder="Es. Backup notte server principale" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Tipo di Backup</label>
+              <select class="form-select" id="f-type" required>
+                <option value="full">Completo</option>
+                <option value="vm_snapshot">Solo VM (snapshot OVF)</option>
+                <option value="app_data">Solo Dati Applicativi + DB</option>
+              </select>
+              <div class="mt-1" id="type-hint" style="font-size:.75rem;color:var(--text-muted)"></div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Sorgente</label>
+              <select class="form-select" id="f-server" required>
+                <option value="">— Seleziona server —</option>
+              </select>
+              <div class="mt-1" id="server-info" style="font-size:.75rem;color:var(--text-muted)"></div>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Destinazione (QNAP)</label>
+              <select class="form-select" id="f-dest" required>
+                <option value="">— Seleziona destinazione —</option>
+              </select>
+              <div class="mt-1" id="dest-info" style="font-size:.75rem;color:var(--text-muted)"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sezione 2: Schedulazione -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem">2</span>
+          Pianificazione
+        </div>
+        <div class="card-body">
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset('0 2 * * *','Ogni notte alle 02:00')">Ogni notte (02:00)</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset('0 3 * * 0','Domenica alle 03:00')">Settimanale (dom)</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset('0 1 * * 1-5','Lun–Ven alle 01:00')">Solo feriali</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset('0 */6 * * *','Ogni 6 ore')">Ogni 6 ore</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setPreset('0 2 1 * *','Primo del mese')">Mensile</button>
+          </div>
+          <div class="row g-2">
+            <div class="col"><label class="form-label text-center d-block">Minuto</label><input class="form-control form-control-sm cron-part text-center" id="c-min" value="0"></div>
+            <div class="col"><label class="form-label text-center d-block">Ora</label><input class="form-control form-control-sm cron-part text-center" id="c-hour" value="2"></div>
+            <div class="col"><label class="form-label text-center d-block">G. mese</label><input class="form-control form-control-sm cron-part text-center" id="c-day" value="*"></div>
+            <div class="col"><label class="form-label text-center d-block">Mese</label><input class="form-control form-control-sm cron-part text-center" id="c-month" value="*"></div>
+            <div class="col"><label class="form-label text-center d-block">G. sett.</label><input class="form-control form-control-sm cron-part text-center" id="c-dow" value="*"></div>
+          </div>
+          <div class="mt-3 p-2 rounded d-flex align-items-center gap-2" style="background:#0a0c10;border:1px solid var(--card-border)">
+            <i class="bi bi-clock" style="color:var(--cri-red)"></i>
+            <code id="cron-preview" style="color:#fbbf24">0 2 * * *</code>
+            <span class="text-muted" style="font-size:.8rem" id="cron-desc">— Ogni notte alle 02:00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sezione 3: Retention e opzioni -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem">3</span>
+          Retention e Opzioni
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">Copie da mantenere</label>
+              <div class="input-group input-group-sm">
+                <input type="number" class="form-control" id="f-retention" value="7" min="1" max="365">
+                <span class="input-group-text">backup</span>
+              </div>
+              <div style="font-size:.73rem;color:var(--text-muted);margin-top:.25rem">I backup più vecchi vengono rimossi automaticamente</div>
+            </div>
+            <div class="col-md-8">
+              <label class="form-label">Opzioni</label>
+              <div class="d-flex flex-wrap gap-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="f-compress" checked>
+                  <label class="form-check-label form-label" for="f-compress">Comprimi backup</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="f-verify" checked>
+                  <label class="form-check-label form-label" for="f-verify">Verifica integrità (SHA-256)</label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sezione 4: Notifiche -->
+      <div class="card mb-4">
+        <div class="card-header">
+          <span style="color:var(--cri-red);font-weight:700;margin-right:.5rem">4</span>
+          Notifiche Email
+        </div>
+        <div class="card-body">
+          <div class="row g-3">
+            <div class="col-md-7">
+              <label class="form-label">Indirizzo email (lascia vuoto per disabilitare)</label>
+              <input class="form-control" id="f-email" type="email" placeholder="admin@example.com">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">Invia notifica per</label>
+              <div class="d-flex flex-column gap-1">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="f-notify-fail" checked>
+                  <label class="form-check-label form-label" for="f-notify-fail">Backup fallito</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="f-notify-ok">
+                  <label class="form-check-label form-label" for="f-notify-ok">Backup riuscito</label>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="alert-dark-info mt-3" id="smtp-warn" style="display:none">
+            <i class="bi bi-info-circle me-1"></i> SMTP non ancora configurato. Vai in <a href="/settings" style="color:#93c5fd">Impostazioni</a> per abilitare le email.
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-end gap-2">
+        <a href="/jobs" class="btn btn-outline-secondary">Annulla</a>
+        <button type="submit" class="btn btn-primary">
+          <i class="bi bi-check2 me-1"></i> Crea Job
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const serversData = {};
+const destsData = {};
+
+async function loadSelects() {
+  const [servers, dests] = await Promise.all([api('GET','/api/servers'), api('GET','/api/destinations')]);
+  const ss = document.getElementById('f-server');
+  const typeLabels = { linux: 'Linux', windows: 'Windows', vmware: 'VMware' };
+  servers.forEach(s=>{
+    serversData[s.id] = s;
+    const o=document.createElement('option'); o.value=s.id;
+    o.textContent=`${s.name} (${typeLabels[s.server_type]||s.server_type})`;
+    ss.appendChild(o);
+  });
+  const ds = document.getElementById('f-dest');
+  dests.forEach(d=>{
+    destsData[d.id] = d;
+    const o=document.createElement('option'); o.value=d.id;
+    o.textContent=`${d.name} — ${d.host}`;
+    ds.appendChild(o);
+  });
+
+  // Avvisa se SMTP non configurato
+  try {
+    const smtp = await api('GET','/api/settings/smtp');
+    if (!smtp.smtp_host) document.getElementById('smtp-warn').style.display='';
+  } catch(e) {}
+}
+
+document.getElementById('f-server').addEventListener('change', function() {
+  const s = serversData[this.value];
+  const info = document.getElementById('server-info');
+  const typeEl = document.getElementById('f-type');
+  const hint = document.getElementById('type-hint');
+  if (!s) { info.textContent=''; return; }
+
+  if (s.server_type === 'vmware') {
+    info.textContent = `Host ESXi: ${s.vmware_host_name||'—'} · VM: ${s.vm_name||'—'}`;
+    // VMware: solo snapshot OVF
+    typeEl.innerHTML = `<option value="vm_snapshot">Snapshot OVF (backup completo VM)</option>`;
+    hint.textContent = 'Sorgente VMware: esegue snapshot e salva il file OVF sul QNAP.';
+  } else if (s.server_type === 'windows') {
+    info.textContent = `IP: ${s.ip_address||'—'} · Porta WinRM: ${s.winrm_port||5985}`;
+    typeEl.innerHTML = `
+      <option value="full">Completo — wbadmin bare-metal + Dati App</option>
+      <option value="app_data">Solo Dati Applicativi + DB</option>`;
+    hint.textContent = s.app_name ? `App: ${s.app_name}` : '';
+  } else {
+    info.textContent = `IP: ${s.ip_address||'—'} · Porta SSH: ${s.ssh_port||22}`;
+    typeEl.innerHTML = `
+      <option value="app_data">Dati Applicativi + DB</option>
+      <option value="full">Completo — App + Snapshot VM (se configurato)</option>
+      <option value="vm_snapshot">Solo VM Snapshot (se VMware configurato)</option>`;
+    hint.textContent = s.app_name ? `App: ${s.app_name}` : '';
+  }
+});
+
+document.getElementById('f-dest').addEventListener('change', function() {
+  const d = destsData[this.value];
+  const info = document.getElementById('dest-info');
+  if (d) info.textContent = `Host: ${d.host} · Path: ${d.base_path} · Tipo: ${d.dest_type}`;
+  else info.textContent='';
+});
+
+function buildCron() {
+  return ['c-min','c-hour','c-day','c-month','c-dow'].map(id=>document.getElementById(id).value.trim()||'*').join(' ');
+}
+
+document.querySelectorAll('.cron-part').forEach(el=>el.addEventListener('input',()=>{
+  document.getElementById('cron-preview').textContent = buildCron();
+  document.getElementById('cron-desc').textContent = '';
+}));
+
+function setPreset(cron, desc) {
+  const parts = cron.split(' ');
+  ['c-min','c-hour','c-day','c-month','c-dow'].forEach((id,i)=>document.getElementById(id).value=parts[i]);
+  document.getElementById('cron-preview').textContent = cron;
+  document.getElementById('cron-desc').textContent = '— '+desc;
+}
+
+document.getElementById('job-form').addEventListener('submit', async e=>{
+  e.preventDefault();
+  const payload = {
+    name: document.getElementById('f-name').value,
+    server_id: +document.getElementById('f-server').value,
+    destination_id: +document.getElementById('f-dest').value,
+    backup_type: document.getElementById('f-type').value,
+    cron_expression: buildCron(),
+    retention_copies: +document.getElementById('f-retention').value || 7,
+    compression: document.getElementById('f-compress').checked,
+    verify_integrity: document.getElementById('f-verify').checked,
+    notify_email: document.getElementById('f-email').value || null,
+    notify_on_success: document.getElementById('f-notify-ok').checked,
+    notify_on_failure: document.getElementById('f-notify-fail').checked,
+  };
+  try {
+    const res = await api('POST','/api/jobs', payload);
+    showToast(`Job "${res.name}" creato con successo!`);
+    setTimeout(()=>{ window.location.href='/jobs'; }, 1200);
+  } catch(e) { showToast(e.message,'danger'); }
+});
+
+loadSelects();
+</script>
+{% endblock %}

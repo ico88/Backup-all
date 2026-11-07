@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}Report & Statistiche{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="page-title"><i class="bi bi-bar-chart-line me-2" style="color:var(--cri-red)"></i>Report &amp; Statistiche</div>
+  <div class="d-flex gap-2 align-items-center">
+    <select id="period-select" class="form-select form-select-sm" style="width:auto;min-width:140px" onchange="loadAll()">
+      <option value="7">Ultimi 7 giorni</option>
+      <option value="30" selected>Ultimi 30 giorni</option>
+      <option value="90">Ultimi 90 giorni</option>
+      <option value="365">Ultimo anno</option>
+    </select>
+    <button class="btn btn-outline-secondary btn-sm" onclick="loadAll()">
+      <i class="bi bi-arrow-clockwise"></i>
+    </button>
+    <button class="btn btn-primary btn-sm" onclick="exportCsv()">
+      <i class="bi bi-download me-1"></i>Esporta CSV
+    </button>
+  </div>
+</div>
+
+<!-- KPI cards -->
+<div class="row g-3 mb-4" id="kpi-row">
+  <div class="col-6 col-xl-2">
+    <div class="stat-card flex-column align-items-start gap-1" style="padding:.9rem 1rem">
+      <div class="stat-icon green" style="width:36px;height:36px;font-size:1rem"><i class="bi bi-check-circle"></i></div>
+      <div><div class="stat-val" id="k-success">—</div><div class="stat-lbl">Successi</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-2">
+    <div class="stat-card flex-column align-items-start gap-1" style="padding:.9rem 1rem">
+      <div class="stat-icon red" style="width:36px;height:36px;font-size:1rem"><i class="bi bi-x-circle"></i></div>
+      <div><div class="stat-val" id="k-failed">—</div><div class="stat-lbl">Falliti</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-2">
+    <div class="stat-card flex-column align-items-start gap-1" style="padding:.9rem 1rem">
+      <div class="stat-icon blue" style="width:36px;height:36px;font-size:1rem"><i class="bi bi-percent"></i></div>
+      <div><div class="stat-val" id="k-rate">—</div><div class="stat-lbl">Tasso successo</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-2">
+    <div class="stat-card flex-column align-items-start gap-1" style="padding:.9rem 1rem">
+      <div class="stat-icon amber" style="width:36px;height:36px;font-size:1rem"><i class="bi bi-hdd"></i></div>
+      <div><div class="stat-val" id="k-size">—</div><div class="stat-lbl">Dati totali</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-2">
+    <div class="stat-card flex-column align-items-start gap-1" style="padding:.9rem 1rem">
+      <div class="stat-icon blue" style="width:36px;height:36px;font-size:1rem"><i class="bi bi-stopwatch"></i></div>
+      <div><div class="stat-val" id="k-dur">—</div><div class="stat-lbl">Durata media</div></div>
+    </div>
+  </div>
+  <div class="col-6 col-xl-2">
+    <div class="stat-card flex-column align-items-start gap-1" style="padding:.9rem 1rem">
+      <div class="stat-icon green" style="width:36px;height:36px;font-size:1rem"><i class="bi bi-shield-check"></i></div>
+      <div><div class="stat-val" id="k-integrity">—</div><div class="stat-lbl">Integrità OK</div></div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- Trend giornaliero -->
+  <div class="col-lg-8">
+    <div class="card">
+      <div class="card-header">
+        <i class="bi bi-graph-up me-2" style="color:var(--cri-red)"></i>Trend Giornaliero
+      </div>
+      <div class="card-body" style="padding:.8rem 1rem">
+        <canvas id="chart-trend" height="110"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Distribuzione stato -->
+  <div class="col-lg-4">
+    <div class="card">
+      <div class="card-header">
+        <i class="bi bi-pie-chart me-2" style="color:var(--cri-red)"></i>Distribuzione
+      </div>
+      <div class="card-body d-flex align-items-center justify-content-center" style="padding:1rem">
+        <div style="max-width:200px;width:100%">
+          <canvas id="chart-donut"></canvas>
+        </div>
+      </div>
+      <div class="card-footer d-flex justify-content-around" style="font-size:.78rem">
+        <span><span style="color:#22c55e">●</span> Successo</span>
+        <span><span style="color:#ef4444">●</span> Fallito</span>
+        <span><span style="color:#f59e0b">●</span> Parziale</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabella per job -->
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <span><i class="bi bi-table me-2" style="color:var(--cri-red)"></i>Dettaglio per Job</span>
+    <span class="text-muted" style="font-size:.75rem" id="period-label">Ultimi 30 giorni</span>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive">
+      <table class="table table-hover mb-0">
+        <thead><tr>
+          <th>Job</th><th>Sorgente</th><th>Tipo</th>
+          <th style="text-align:center">Eseguiti</th>
+          <th style="text-align:center">Successi</th>
+          <th style="text-align:center">Falliti</th>
+          <th style="text-align:right">Tasso</th>
+          <th style="text-align:right">Dim. media</th>
+          <th style="text-align:right">Durata media</th>
+          <th>Ultimo run</th>
+          <th style="text-align:center">Integrità</th>
+        </tr></thead>
+        <tbody id="job-table">
+          <tr><td colspan="11" class="text-center py-4 text-muted"><i class="bi bi-arrow-repeat spin me-2"></i>Caricamento…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script>
+Chart.defaults.color = '#6b7280';
+Chart.defaults.borderColor = '#252830';
+Chart.defaults.font.family = "'Segoe UI', system-ui, sans-serif";
+Chart.defaults.font.size = 11;
+
+let trendChart, donutChart;
+
+function days() { return parseInt(document.getElementById('period-select').value); }
+
+function fmtBytes(b) {
+  if (!b) return '—';
+  if (b >= 1e12) return (b/1e12).toFixed(1)+' TB';
+  if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
+  if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
+  return (b/1e3).toFixed(0)+' KB';
+}
+function fmtDur(s) {
+  if (!s) return '—';
+  if (s < 60) return s+'s';
+  return Math.floor(s/60)+'m '+Math.round(s%60)+'s';
+}
+function fmtDate(iso) {
+  if (!iso) return '<span class="text-muted">—</span>';
+  return new Date(iso).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
+
+const rateColor = r => r === null ? '' : r >= 95 ? 'color:#22c55e' : r >= 75 ? 'color:#f59e0b' : 'color:#ef4444';
+
+const statusBadge = s => ({
+  success: '<span class="badge-status bs-success">OK</span>',
+  failed:  '<span class="badge-status bs-failed">Fallito</span>',
+  running: '<span class="badge-status bs-running">In corso</span>',
+  partial: '<span class="badge-status bs-partial">Parziale</span>',
+}[s] || '<span class="text-muted">—</span>');
+
+const typeLabel = {vm_snapshot:'VM', app_data:'Dati', full:'Completo'};
+
+async function loadAll() {
+  const d = days();
+  const labels = {7:'Ultimi 7 giorni',30:'Ultimi 30 giorni',90:'Ultimi 90 giorni',365:'Ultimo anno'};
+  document.getElementById('period-label').textContent = labels[d] || `Ultimi ${d} giorni`;
+
+  const [summary, byJob, trend] = await Promise.all([
+    api('GET', `/api/stats/summary?days=${d}`),
+    api('GET', `/api/stats/by-job?days=${d}`),
+    api('GET', `/api/stats/trend?days=${d}`)
+  ]);
+
+  // KPI
+  document.getElementById('k-success').textContent = summary.success;
+  document.getElementById('k-failed').textContent = summary.failed;
+  document.getElementById('k-rate').textContent = summary.total_runs ? summary.success_rate+'%' : '—';
+  document.getElementById('k-size').textContent = fmtBytes(summary.total_size_bytes);
+  document.getElementById('k-dur').textContent = fmtDur(summary.avg_duration_seconds);
+  document.getElementById('k-integrity').textContent = summary.integrity_ok > 0 ? `${summary.integrity_ok}/${summary.integrity_ok+summary.integrity_fail}` : '—';
+
+  // Trend chart
+  const tLabels = trend.map(t => {
+    const d = new Date(t.date);
+    return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit'});
+  });
+  const tSuccess = trend.map(t => t.success);
+  const tFailed = trend.map(t => t.failed);
+
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(document.getElementById('chart-trend'), {
+    type: 'bar',
+    data: {
+      labels: tLabels,
+      datasets: [
+        {
+          label: 'Successi', data: tSuccess,
+          backgroundColor: 'rgba(34,197,94,.7)', borderRadius: 3,
+          borderSkipped: false,
+        },
+        {
+          label: 'Falliti', data: tFailed,
+          backgroundColor: 'rgba(239,68,68,.7)', borderRadius: 3,
+          borderSkipped: false,
+        }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: { legend: { position: 'top', labels: { boxWidth: 10, padding: 12 } } },
+      scales: {
+        x: { stacked: true, grid: { color: 'rgba(255,255,255,.04)' }, ticks: { maxTicksLimit: days() <= 30 ? 15 : 20 } },
+        y: { stacked: true, grid: { color: 'rgba(255,255,255,.04)' }, beginAtZero: true, ticks: { stepSize: 1 } }
+      }
+    }
+  });
+
+  // Donut chart
+  if (donutChart) donutChart.destroy();
+  donutChart = new Chart(document.getElementById('chart-donut'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Successi', 'Falliti', 'Parziali'],
+      datasets: [{
+        data: [summary.success, summary.failed, summary.partial],
+        backgroundColor: ['rgba(34,197,94,.8)', 'rgba(239,68,68,.8)', 'rgba(245,158,11,.8)'],
+        borderWidth: 2, borderColor: '#1a1d24',
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      cutout: '70%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw}` } }
+      }
+    }
+  });
+
+  // Job table
+  const tb = document.getElementById('job-table');
+  if (!byJob.length) {
+    tb.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-muted"><i class="bi bi-inbox me-2"></i>Nessun job</td></tr>';
+    return;
+  }
+  tb.innerHTML = byJob.map(j => `
+    <tr>
+      <td>
+        <div class="fw-semibold" style="font-size:.84rem">${j.job_name}</div>
+        <div style="font-size:.7rem;margin-top:.1rem">
+          ${j.verify_integrity?'<i class="bi bi-shield-check text-success me-1"></i>':''}
+          ${j.notify_email?'<i class="bi bi-envelope text-info me-1"></i>':''}
+        </div>
+      </td>
+      <td style="font-size:.8rem;color:var(--text-muted)">${j.server_name}</td>
+      <td style="font-size:.76rem;color:#9ca3af">${typeLabel[j.backup_type]||j.backup_type}</td>
+      <td style="text-align:center;font-size:.85rem">${j.total_runs}</td>
+      <td style="text-align:center"><span style="color:#22c55e;font-size:.85rem;font-weight:600">${j.success}</span></td>
+      <td style="text-align:center">${j.failed?`<span style="color:#ef4444;font-size:.85rem;font-weight:600">${j.failed}</span>`:'<span class="text-muted">0</span>'}</td>
+      <td style="text-align:right">
+        ${j.success_rate !== null
+          ? `<span style="font-size:.85rem;font-weight:700;${rateColor(j.success_rate)}">${j.success_rate}%</span>`
+          : '<span class="text-muted" style="font-size:.78rem">—</span>'}
+      </td>
+      <td style="text-align:right;font-size:.8rem;color:var(--text-muted)">${fmtBytes(j.avg_size_bytes)}</td>
+      <td style="text-align:right;font-size:.8rem;color:var(--text-muted)">${fmtDur(j.avg_duration_seconds)}</td>
+      <td>
+        ${statusBadge(j.last_run_status)}
+        <div style="font-size:.7rem;color:var(--text-muted)">${fmtDate(j.last_run_at)}</div>
+      </td>
+      <td style="text-align:center">
+        <span style="font-size:.78rem;color:var(--text-muted)">${j.retention_copies} copie</span>
+      </td>
+    </tr>`).join('');
+}
+
+function exportCsv() {
+  window.location.href = `/api/stats/export-csv?days=${days()}`;
+}
+
+loadAll();
+</script>
+{% endblock %}
